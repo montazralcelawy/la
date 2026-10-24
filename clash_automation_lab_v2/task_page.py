@@ -275,34 +275,32 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'اكتملت القائمة', 'انتهى تنفيذ جميع المهام الجاهزة. راجع حالة ونتيجة كل مهمة في الجدول.')
             return
         task_id = self.queue_ids.pop(0)
-        for row in range(self.table.rowCount()):
-            if int(self.table.item(row, 0).text()) == task_id:
-                self.table.selectRow(row)
-                self.run_task(quiet=True, from_queue=True)
-                return
-        self.window.log('تم تجاوز مهمة غير موجودة في الجدول: ' + str(task_id))
-        self.run_next_queued_task()
+        # Do not depend on table selection: refreshing the table can clear the selection.
+        self.run_task(quiet=True, from_queue=True, task_id=task_id)
 
-    def run_task(self, checked=False, quiet=False, from_queue=False):
+    def run_task(self, checked=False, quiet=False, from_queue=False, task_id=None):
         if self.worker is not None and self.worker.isRunning():
-            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'انتظر انتهاء المهمة الحالية قبل تشغيل مهمة أخرى.')
-            return
-        row = self.table.currentRow()
-        if row < 0:
             if not quiet:
-                QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
-            if from_queue:
-                self.run_next_queued_task()
+                QMessageBox.information(self, 'المهمة قيد التنفيذ', 'انتظر انتهاء المهمة الحالية قبل تشغيل مهمة أخرى.')
             return
-        task_id = int(self.table.item(row, 0).text())
+        if task_id is None:
+            row = self.table.currentRow()
+            if row < 0:
+                if not quiet:
+                    QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
+                return
+            task_id = int(self.table.item(row, 0).text())
         con = db()
         task = con.execute('SELECT name,serial,action,status FROM tasks WHERE id=?', (task_id,)).fetchone()
         con.close()
         if not task:
+            self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأنها لم تعد موجودة.')
+            if from_queue:
+                self.run_next_queued_task()
             return
         name, serial, action, old_status = task
-        if old_status != 'جاهزة' and from_queue:
-            self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأن حالتها ليست جاهزة.')
+        if from_queue and old_status != 'جاهزة':
+            self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأن حالتها الحالية هي: ' + old_status)
             self.run_next_queued_task()
             return
         if old_status == 'قيد التشغيل':
@@ -314,7 +312,7 @@ class TasksPage(QWidget):
         con.commit()
         con.close()
         self.reload_tasks()
-        self.window.log('بدأت المهمة «' + name + '».')
+        self.window.log('بدأت المهمة «' + name + '» (ID: ' + str(task_id) + ').')
         self.worker = TaskWorker(task_id, name, serial, action, self.window.adb())
         self.worker.completed.connect(self.task_finished)
         self.worker.start()
