@@ -146,7 +146,7 @@ class TasksPage(QWidget):
         layout.addWidget(note)
         self.worker = None
         con = db()
-        con.execute(\"UPDATE tasks SET status='متوقفة',result='أُعيد تشغيل البرنامج قبل اكتمال المهمة.' WHERE status='قيد التشغيل'\")
+        con.execute("UPDATE tasks SET status='متوقفة',result='أُعيد تشغيل البرنامج قبل اكتمال المهمة.' WHERE status='قيد التشغيل'")
         con.commit()
         con.close()
         self.reload_profiles()
