@@ -145,6 +145,10 @@ class TasksPage(QWidget):
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
+        con = db()
+        con.execute(\"UPDATE tasks SET status='متوقفة',result='أُعيد تشغيل البرنامج قبل اكتمال المهمة.' WHERE status='قيد التشغيل'\")
+        con.commit()
+        con.close()
         self.reload_profiles()
         self.reload_tasks()
 
@@ -274,6 +278,9 @@ class TasksPage(QWidget):
         self.worker = None
 
     def delete_task(self):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'أوقف المهمة وانتظر انتهائها قبل حذف المهام.')
+            return
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
