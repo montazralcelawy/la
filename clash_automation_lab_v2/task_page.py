@@ -1,4 +1,5 @@
 import sqlite3
+import sys
 import json
 from pathlib import Path
 from datetime import datetime
@@ -8,7 +9,7 @@ import time
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import *
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 DB = ROOT / 'profiles.db'
 
 
