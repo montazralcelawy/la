@@ -131,7 +131,7 @@ class Window(QMainWindow):
    for r,x in enumerate(rows):
     vals=[x[0],x[1],x[2],x[3],'نعم' if x[5] else 'لا'] if full else [('مفعّل' if x[5] else 'متوقف'),x[3] or '—',x[4],x[2] or '—',x[1]]
     for col,v in enumerate(vals):table.setItem(r,col,QTableWidgetItem(str(v)))
-  self.c1.value.setText(str(len(rows))); self.c1.findChildren(QLabel)[1].setText(f'{sum(1 for x in rows if x[5])} نشطة'); c2=db(); running=c2.execute(\"SELECT COUNT(*) FROM tasks WHERE status='قيد التشغيل'\").fetchone()[0] if c2.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'\").fetchone() else 0; c2.close(); self.c2.value.setText(str(running)); taskpage=self.pages.widget(3) if self.pages.count()>3 else None; taskpage.reload_profiles() if hasattr(taskpage,'reload_profiles') else None; taskpage.reload_tasks() if hasattr(taskpage,'reload_tasks') else None
+  self.c1.value.setText(str(len(rows))); self.c1.findChildren(QLabel)[1].setText(f'{sum(1 for x in rows if x[5])} نشطة'); c2=db(); exists=c2.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'").fetchone(); running=c2.execute('SELECT COUNT(*) FROM tasks WHERE status="قيد التشغيل"').fetchone()[0] if exists else 0; c2.close(); self.c2.value.setText(str(running)); taskpage=self.pages.widget(3) if self.pages.count()>3 else None; taskpage.reload_profiles() if hasattr(taskpage,'reload_profiles') else None; taskpage.reload_tasks() if hasattr(taskpage,'reload_tasks') else None
  def new_and_open(self):self.clear_form(); self.switch(1)
  def clear_form(self):
   self.selected=None; self.ftable.clearSelection(); self.name.clear(); self.serial.clear(); self.village.clear(); self.task.setCurrentIndex(0); self.notes.clear(); self.enabled.setChecked(True)
