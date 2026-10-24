@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+import subprocess
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import *
 
 ROOT = Path(__file__).resolve().parent
@@ -16,6 +18,48 @@ def db():
         created TEXT DEFAULT CURRENT_TIMESTAMP)""")
     con.commit()
     return con
+
+
+class TaskWorker(QThread):
+    completed = Signal(int, str, str, str)
+
+    def __init__(self, task_id, name, serial, action, adb_path):
+        super().__init__()
+        self.task_id = task_id
+        self.task_name = name
+        self.serial = serial
+        self.action = action
+        self.adb_path = adb_path
+
+    def run(self):
+        status, result = 'فشلت', ''
+        try:
+            if not self.adb_path:
+                raise RuntimeError('لم يتم العثور على ADB. تحقق من Android Platform Tools.')
+            args = [self.adb_path, '-s', self.serial]
+            args += ['get-state'] if self.action == 'check' else ['exec-out', 'screencap', '-p']
+            proc = subprocess.run(args, capture_output=True, timeout=25,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if proc.returncode != 0:
+                result = proc.stderr.decode(errors='replace').strip() or 'فشل أمر ADB؛ تحقق من اتصال الجهاز.'
+            elif self.action == 'check':
+                state = proc.stdout.decode(errors='replace').strip()
+                if state == 'device':
+                    status, result = 'نجحت', 'الجهاز متصل وجاهز.'
+                else:
+                    result = 'حالة الجهاز غير متوقعة: ' + (state or 'لا توجد استجابة')
+            elif proc.stdout[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
+                folder = ROOT / 'screenshots'
+                folder.mkdir(exist_ok=True)
+                safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in self.serial)
+                path = folder / (safe + '_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
+                path.write_bytes(proc.stdout)
+                status, result = 'نجحت', 'حُفظت اللقطة: ' + str(path)
+            else:
+                result = 'تعذر التقاط صورة صالحة؛ تحقق من اتصال الجهاز.'
+        except Exception as exc:
+            result = str(exc)
+        self.completed.emit(self.task_id, status, result, self.task_name)
 
 
 class TasksPage(QWidget):
