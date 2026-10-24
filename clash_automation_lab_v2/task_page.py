@@ -213,7 +213,7 @@ class TasksPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         tl.addWidget(self.table)
         layout.addWidget(table_panel, 1)
-        note = QLabel('تدعم الصفحة فحص اتصال ADB وفتح اللعبة وحفظ لقطة شاشة، مع تشغيل المهام الجاهزة بالتتابع.')
+        note = QLabel('المهام المدعومة: فحص ADB، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر وتأكد من دقة شاشة المحاكي.')
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
@@ -311,8 +311,12 @@ class TasksPage(QWidget):
                               FROM tasks t LEFT JOIN profiles p ON p.id=t.profile_id ORDER BY t.id DESC""").fetchall()
         con.close()
         self.table.setRowCount(len(rows))
-        names = {'check': 'اختبار اتصال', 'screenshot': 'لقطة شاشة',
-                 'launch_game': 'فتح Clash of Clans'}
+        names = {
+            'check': 'اختبار اتصال', 'screenshot': 'لقطة شاشة',
+            'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
+            'swipe': 'سحب الشاشة', 'wait': 'انتظار',
+            'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
+        }
         for i, row in enumerate(rows):
             vals = [row[0], row[1], row[2] or '—', row[3] or '—',
                     names.get(row[4], row[4]), row[5] + (': ' + row[6] if row[6] else '')]
