@@ -157,7 +157,7 @@ class TasksPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         tl.addWidget(self.table)
         layout.addWidget(table_panel, 1)
-        note = QLabel('تنفذ هذه الصفحة فحص اتصال ADB أو حفظ لقطة شاشة محلية فقط.')
+        note = QLabel('تدعم الصفحة فحص اتصال ADB وفتح اللعبة وحفظ لقطة شاشة، مع تشغيل المهام الجاهزة بالتتابع.')
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
