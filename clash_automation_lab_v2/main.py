@@ -185,10 +185,34 @@ class Window(QMainWindow):
   out=self.runadb(['version'])
   if out:self.log('ADB متاح: '+out.splitlines()[0]); self.adbout.appendPlainText(out) if hasattr(self,'adbout') else None
  def list_devices(self):
+  # Auto-discover common local BlueStacks ADB ports, including Pie's 5556.
+  # Keep already-connected devices and only connect to localhost endpoints.
+  exe=self.adb()
+  if not exe:
+   self.runadb(['devices'])
+   return
+  connection_notes=[]
+  try:
+   for port in (5555,5556):
+    try:
+     r=subprocess.run([exe,'connect',f'127.0.0.1:{port}'],capture_output=True,timeout=5,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+     msg=(r.stdout+r.stderr).decode(errors='replace').strip()
+     if msg and ('connected to' in msg.lower() or 'already connected' in msg.lower()):
+      connection_notes.append(msg)
+    except Exception:
+     pass
+  except Exception:
+   pass
   out=self.runadb(['devices'])
   if out is not None:
-   self.devices.setPlainText(out or 'لا توجد أجهزة.'); self.adbout.appendPlainText(out) if hasattr(self,'adbout') else None
-   n=sum(1 for s in out.splitlines()[1:] if '\tdevice' in s); self.c3.value.setText(str(n)); self.log('تم تحديث قائمة أجهزة ADB.')
+   display=out or 'لا توجد أجهزة.'
+   if connection_notes:
+    display += '\n\nاكتشاف منافذ المحاكي:\n'+'\n'.join(connection_notes)
+   self.devices.setPlainText(display)
+   self.adbout.appendPlainText(display) if hasattr(self,'adbout') else None
+   n=sum(1 for s in out.splitlines()[1:] if '\tdevice' in s)
+   self.c3.value.setText(str(n))
+   self.log('تم تحديث قائمة أجهزة ADB ومحاولة اكتشاف منافذ BlueStacks 5555 و5556 تلقائياً.')
  def screenshot(self):
   serial=self.serial.text().strip() if hasattr(self,'serial') else ''; path,_=QFileDialog.getSaveFileName(self,'حفظ لقطة الشاشة',str(ROOT/'screenshot.png'),'PNG Image (*.png)')
   if not path:return
