@@ -40,7 +40,7 @@ class Card(QFrame):
 class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
-  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.pages.addWidget(TasksPage(self)); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
+  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.task_page = TasksPage(self); self.pages.addWidget(self.task_page); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
   self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0']); self.pages.addWidget(BotConfigPage(self))
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
@@ -53,7 +53,7 @@ class Window(QMainWindow):
   shield=QLabel('🛡  ✓'); shield.setStyleSheet('color:#50cf68;font-size:38px;padding:10px'); shield.setAlignment(Qt.AlignCenter); st.addWidget(shield)
   st.addWidget(QLabel('الإصدار: 1.0.0'))
   updates=QPushButton('التحقق من التحديثات'); updates.clicked.connect(lambda:self.log('التحقق من التحديثات غير متاح دون إعداد خدمة تحديث.')); st.addWidget(updates)
-  sl.addWidget(status); root.addWidget(side); self.switch(0); self.refresh(); self.log('تم تشغيل البرنامج. المشغّل تجريبي ولا ينفذ أوامر اللعبة.')
+  sl.addWidget(status); root.addWidget(side); self.switch(0); self.refresh(); self.log('تم تشغيل البرنامج. يمكن تنفيذ مهام ADB المدعومة من صفحة المهام؛ إعدادات استراتيجية اللعب ليست مؤتمتة بالكامل بعد.')
  def panel(self,title):
   f=QFrame(); f.setObjectName('panel'); l=QVBoxLayout(f); l.setContentsMargins(12,10,12,10); h=QLabel(title); h.setStyleSheet('font-size:15px;font-weight:bold'); l.addWidget(h); return f,l
  def title(self,s):
@@ -252,7 +252,15 @@ class Window(QMainWindow):
   self.dlog.clear()
   if hasattr(self,'fulllog'): self.fulllog.clear()
   self.log('تم مسح السجل الظاهر.')
- def start_demo(self):self.running=True; self.start.setEnabled(False); self.stop.setEnabled(True); self.c4.value.setText('يعمل'); self.navstatus.setText('تشغيل تجريبي'); self.log('بدأ المشغّل التجريبي؛ لا توجد أوامر لعب تُنفّذ.')
- def stop_demo(self):self.running=False; self.start.setEnabled(True); self.stop.setEnabled(False); self.c4.value.setText('جاهز'); self.navstatus.setText('جاهز'); self.log('تم إيقاف المشغّل التجريبي.')
+ def queue_state_changed(self, active):
+  self.running=bool(active)
+  self.start.setEnabled(not active)
+  self.stop.setEnabled(active)
+  self.c4.value.setText('ينفّذ المهام' if active else 'جاهز')
+  self.navstatus.setText('تنفيذ المهام' if active else 'جاهز')
+ def start_demo(self):
+  self.task_page.run_queue()
+ def stop_demo(self):
+  self.task_page.stop_task()
 if __name__=='__main__':
  app=QApplication(sys.argv); app.setLayoutDirection(Qt.RightToLeft); app.setStyleSheet(STYLE); w=Window(); w.show(); sys.exit(app.exec())
