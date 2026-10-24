@@ -1,4 +1,5 @@
 import sys, sqlite3, subprocess, shutil
+from task_page import TasksPage
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt
@@ -38,7 +39,7 @@ class Card(QFrame):
 class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
-  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.make_text_page('المهام',['إدارة مهام عامة ستُضاف في المرحلة التالية.','المشغّل الحالي تجريبي فقط.']); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
+  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.pages.addWidget(TasksPage(self)); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
   self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0'])
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
@@ -130,7 +131,7 @@ class Window(QMainWindow):
    for r,x in enumerate(rows):
     vals=[x[0],x[1],x[2],x[3],'نعم' if x[5] else 'لا'] if full else [('مفعّل' if x[5] else 'متوقف'),x[3] or '—',x[4],x[2] or '—',x[1]]
     for col,v in enumerate(vals):table.setItem(r,col,QTableWidgetItem(str(v)))
-  self.c1.value.setText(str(len(rows))); self.c1.findChildren(QLabel)[1].setText(f'{sum(1 for x in rows if x[5])} نشطة'); self.c2.value.setText('0')
+  self.c1.value.setText(str(len(rows))); self.c1.findChildren(QLabel)[1].setText(f'{sum(1 for x in rows if x[5])} نشطة'); c2=db(); exists=c2.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'").fetchone(); running=c2.execute('SELECT COUNT(*) FROM tasks WHERE status="قيد التشغيل"').fetchone()[0] if exists else 0; c2.close(); self.c2.value.setText(str(running)); taskpage=self.pages.widget(3) if self.pages.count()>3 else None; taskpage.reload_profiles() if hasattr(taskpage,'reload_profiles') else None; taskpage.reload_tasks() if hasattr(taskpage,'reload_tasks') else None
  def new_and_open(self):self.clear_form(); self.switch(1)
  def clear_form(self):
   self.selected=None; self.ftable.clearSelection(); self.name.clear(); self.serial.clear(); self.village.clear(); self.task.setCurrentIndex(0); self.notes.clear(); self.enabled.setChecked(True)
