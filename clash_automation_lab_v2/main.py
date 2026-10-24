@@ -1,5 +1,6 @@
 import sys, sqlite3, subprocess, shutil
 from task_page import TasksPage
+from bot_config_page import BotConfigPage
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt
@@ -41,10 +42,10 @@ class Window(QMainWindow):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
   self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.pages.addWidget(TasksPage(self)); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
   self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
-  self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0'])
+  self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0']); self.pages.addWidget(BotConfigPage(self))
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
   brand=QLabel('🛡  Clash Automation Lab'); brand.setStyleSheet('font-size:16px;font-weight:700;padding:8px 3px 16px 3px'); brand.setAlignment(Qt.AlignCenter); sl.addWidget(brand)
-  for label,i in [('⌂  الرئيسية',0),('♙  ملفات التعريف',1),('☷  المهام',3),('▣  المحاكي و ADB',2),('⚙  الإعدادات',4),('‹›  السكربتات',6),('▤  السجل',5),('ⓘ  حول البرنامج',7)]:
+  for label,i in [('⌂  الرئيسية',0),('♙  ملفات التعريف',1),('☷  المهام',3),('▣  المحاكي و ADB',2),('⚙  الإعدادات',4),('‹›  السكربتات',6),('▤  السجل',5),('ⓘ  حول البرنامج',7),('⚙  إعدادات البوت',8)]:
    b=QPushButton(label); b.setObjectName('nav'); b.setCheckable(True); b.setMinimumHeight(42); b.clicked.connect(lambda _,n=i:self.switch(n)); sl.addWidget(b); self.navs.append((b,i))
   sl.addStretch()
   status=QFrame(); status.setObjectName('panel'); st=QVBoxLayout(status); st.setContentsMargins(12,12,12,12)
