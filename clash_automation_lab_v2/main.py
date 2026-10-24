@@ -18,8 +18,12 @@ QPushButton:hover{background:#2a4155}
 QPushButton#primary{background:#5541b8;border-color:#7663e7;font-weight:600}
 QPushButton#green{background:#287d3a;border-color:#3ca753;font-weight:600}
 QPushButton#red{background:#a83238;border-color:#d74a4a;font-weight:600}
-QPushButton#nav{text-align:right;padding:11px;border:none;background:#142432}
-QPushButton#nav:checked{background:#4a39a6;border:1px solid #7663e7}
+QPushButton#nav{text-align:right;padding:11px 13px;border:none;background:#142432;border-radius:7px}
+QPushButton#nav:hover{background:#1d3041}
+QPushButton#nav:checked{background:#443494;border:1px solid #6e5bdf}
+QTableWidget{border-radius:7px}
+QHeaderView::section{padding:10px}
+QFrame#panel{background:#122230;border:1px solid #304252;border-radius:8px}
 QLineEdit,QComboBox{background:#0c1a26;border:1px solid #344a5d;border-radius:5px;padding:7px;color:#f0f5fb}
 QTableWidget{background:#0f1e2b;alternate-background-color:#142635;border:1px solid #304252;gridline-color:#293c4d;selection-background-color:#3e367f}
 QHeaderView::section{background:#1a2b3a;color:#cbd6e2;border:none;padding:9px;font-weight:600}
@@ -35,20 +39,62 @@ class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
   self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.make_text_page('المهام',['إدارة مهام عامة ستُضاف في المرحلة التالية.','المشغّل الحالي تجريبي فقط.']); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
-  side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(220); sl=QVBoxLayout(side); sl.addWidget(QLabel('🛡  Clash Automation Lab')); sl.addSpacing(12)
-  for label,i in [('⌂  الرئيسية',0),('♙  ملفات التعريف',1),('☷  المهام',3),('▣  المحاكي و ADB',2),('⚙  الإعدادات',4),('▤  السجل',5)]:
-   b=QPushButton(label); b.setObjectName('nav'); b.setCheckable(True); b.clicked.connect(lambda _,n=i:self.switch(n)); sl.addWidget(b); self.navs.append((b,i))
-  sl.addStretch(); status=QFrame(); status.setObjectName('panel'); st=QVBoxLayout(status); st.addWidget(QLabel('● الحالة العامة')); self.navstatus=QLabel('جاهز'); self.navstatus.setStyleSheet('color:#50cf68;font-size:19px;font-weight:bold'); st.addWidget(self.navstatus); st.addWidget(QLabel('الإصدار 1.0.0')); sl.addWidget(status); root.addWidget(side); self.switch(0); self.refresh(); self.log('تم تشغيل البرنامج. المشغّل تجريبي ولا ينفذ أوامر اللعبة.')
+  self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
+  self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0'])
+  side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
+  brand=QLabel('🛡  Clash Automation Lab'); brand.setStyleSheet('font-size:16px;font-weight:700;padding:8px 3px 16px 3px'); brand.setAlignment(Qt.AlignCenter); sl.addWidget(brand)
+  for label,i in [('⌂  الرئيسية',0),('♙  ملفات التعريف',1),('☷  المهام',3),('▣  المحاكي و ADB',2),('⚙  الإعدادات',4),('‹›  السكربتات',6),('▤  السجل',5),('ⓘ  حول البرنامج',7)]:
+   b=QPushButton(label); b.setObjectName('nav'); b.setCheckable(True); b.setMinimumHeight(42); b.clicked.connect(lambda _,n=i:self.switch(n)); sl.addWidget(b); self.navs.append((b,i))
+  sl.addStretch()
+  status=QFrame(); status.setObjectName('panel'); st=QVBoxLayout(status); st.setContentsMargins(12,12,12,12)
+  st.addWidget(QLabel('●  الحالة العامة')); self.navstatus=QLabel('كل الأنظمة تعمل'); self.navstatus.setStyleSheet('color:#50cf68;font-size:18px;font-weight:bold'); self.navstatus.setAlignment(Qt.AlignCenter); st.addWidget(self.navstatus)
+  shield=QLabel('🛡  ✓'); shield.setStyleSheet('color:#50cf68;font-size:38px;padding:10px'); shield.setAlignment(Qt.AlignCenter); st.addWidget(shield)
+  st.addWidget(QLabel('الإصدار: 1.0.0'))
+  updates=QPushButton('التحقق من التحديثات'); updates.clicked.connect(lambda:self.log('التحقق من التحديثات غير متاح دون إعداد خدمة تحديث.')); st.addWidget(updates)
+  sl.addWidget(status); root.addWidget(side); self.switch(0); self.refresh(); self.log('تم تشغيل البرنامج. المشغّل تجريبي ولا ينفذ أوامر اللعبة.')
  def panel(self,title):
   f=QFrame(); f.setObjectName('panel'); l=QVBoxLayout(f); l.setContentsMargins(12,10,12,10); h=QLabel(title); h.setStyleSheet('font-size:15px;font-weight:bold'); l.addWidget(h); return f,l
  def title(self,s):
   x=QLabel(s); x.setObjectName('title'); return x
  def make_dashboard(self):
-  p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title('لوحة التحكم الرئيسية')); row=QHBoxLayout(); self.c1=Card('ملفات التعريف','0','إجمالي الملفات','#a78bfa'); self.c2=Card('ملفات مفعّلة','0','جاهزة للإعداد','#4ecb74'); self.c3=Card('أجهزة متصلة','—','عبر ADB','#70a7ff'); self.c4=Card('حالة البرنامج','جاهز','المهام متوقفة','#4ecb74')
+  p=QWidget(); l=QVBoxLayout(p); l.setContentsMargins(12,10,12,10); l.setSpacing(12)
+  header=QHBoxLayout(); header.addWidget(self.title('▦  لوحة التحكم الرئيسية')); header.addStretch()
+  refresh=QPushButton('⟳ تحديث البيانات'); refresh.clicked.connect(lambda:(self.refresh(),self.list_devices())); header.addWidget(refresh); l.addLayout(header)
+  row=QHBoxLayout(); row.setSpacing(10)
+  self.c1=Card('ملفات التعريف','0','0 نشطة','#a78bfa')
+  self.c2=Card('المهام قيد التشغيل','0','من أصل 5','#ffad42')
+  self.c3=Card('أجهزة متصلة','—','عبر ADB','#70a7ff')
+  self.c4=Card('حالة البرنامج','جاهز','المشغّل متوقف','#4ecb74')
   for c in [self.c1,self.c2,self.c3,self.c4]: row.addWidget(c)
-  l.addLayout(row); mid=QHBoxLayout(); f,fl=self.panel('ملفات التعريف'); top=QHBoxLayout(); top.addWidget(QLabel('الحسابات وملفات الإعدادات')); top.addStretch(); b=QPushButton('＋ جديد'); b.setObjectName('primary'); b.clicked.connect(self.new_and_open); top.addWidget(b); fl.addLayout(top); self.dtable=QTableWidget(0,5); self.dtable.setHorizontalHeaderLabels(['الحالة','القرية','المهمة','ADB Serial','اسم الملف']); self.setup_table(self.dtable); fl.addWidget(self.dtable); b2=QPushButton('إدارة كل ملفات التعريف'); b2.clicked.connect(lambda:self.switch(1)); fl.addWidget(b2); mid.addWidget(f,3)
-  f2,fl2=self.panel('الأجهزة المتصلة (ADB)'); self.devices=QPlainTextEdit('لم يتم فحص الأجهزة بعد.'); self.devices.setReadOnly(True); self.devices.setMaximumHeight(180); fl2.addWidget(self.devices); scan=QPushButton('فحص الأجهزة'); scan.clicked.connect(self.list_devices); fl2.addWidget(scan); mid.addWidget(f2,2); l.addLayout(mid,1)
-  bot=QHBoxLayout(); lf,ll=self.panel('آخر العمليات'); self.dlog=QPlainTextEdit(); self.dlog.setReadOnly(True); self.dlog.setMaximumHeight(155); ll.addWidget(self.dlog); bot.addWidget(lf,3); cf,cl=self.panel('التحكم السريع'); cl.addWidget(QLabel('مشغّل تجريبي — لا يتحكم باللعبة.')); rr=QHBoxLayout(); self.start=QPushButton('▶ بدء'); self.start.setObjectName('green'); self.stop=QPushButton('■ إيقاف'); self.stop.setObjectName('red'); self.stop.setEnabled(False); self.start.clicked.connect(self.start_demo); self.stop.clicked.connect(self.stop_demo); rr.addWidget(self.start); rr.addWidget(self.stop); cl.addLayout(rr); shot=QPushButton('التقاط شاشة الجهاز المحدد'); shot.clicked.connect(self.screenshot); cl.addWidget(shot); bot.addWidget(cf,2); l.addLayout(bot); foot=QLabel('Clash Automation Lab • نسخة أولية تعليمية'); foot.setObjectName('muted'); foot.setAlignment(Qt.AlignCenter); l.addWidget(foot); self.pages.addWidget(p)
+  l.addLayout(row)
+  mid=QHBoxLayout(); mid.setSpacing(12)
+  # Keep device monitoring on the left and the profile table in the main area.
+  fdev,fd=self.panel('الأجهزة المتصلة (ADB)  ⟳')
+  self.devices=QPlainTextEdit('لم يتم فحص الأجهزة بعد.'); self.devices.setReadOnly(True); self.devices.setMinimumWidth(235); self.devices.setMaximumHeight(245); fd.addWidget(self.devices)
+  scan=QPushButton('⟳  تحديث الأجهزة'); scan.setObjectName('primary'); scan.clicked.connect(self.list_devices); fd.addWidget(scan)
+  mid.addWidget(fdev,2)
+  fp,fl=self.panel('ملفات التعريف')
+  top=QHBoxLayout(); showall=QPushButton('عرض الكل'); showall.clicked.connect(lambda:self.switch(1)); top.addWidget(showall); top.addStretch()
+  b=QPushButton('＋ جديد'); b.setObjectName('primary'); b.clicked.connect(self.new_and_open); top.addWidget(b); fl.addLayout(top)
+  self.dtable=QTableWidget(0,5); self.dtable.setHorizontalHeaderLabels(['الحالة','القرية الرئيسية','الوضع','ADB Serial','اسم ملف التعريف']); self.setup_table(self.dtable); self.dtable.setMinimumHeight(220); fl.addWidget(self.dtable)
+  mid.addWidget(fp,5); l.addLayout(mid,4)
+  bot=QHBoxLayout(); bot.setSpacing(12)
+  cf,cl=self.panel('التحكم السريع')
+  rr=QHBoxLayout(); self.start=QPushButton('▶ بدء الكل'); self.start.setObjectName('green'); self.stop=QPushButton('■ إيقاف الكل'); self.stop.setObjectName('red'); self.stop.setEnabled(False); self.start.clicked.connect(self.start_demo); self.stop.clicked.connect(self.stop_demo); rr.addWidget(self.start); rr.addWidget(self.stop); cl.addLayout(rr)
+  actions=QGridLayout()
+  restart=QPushButton('⟳  إعادة تشغيل ADB'); restart.clicked.connect(self.restart_adb); actions.addWidget(restart,0,0)
+  shot=QPushButton('▣  التقاط شاشة'); shot.clicked.connect(self.screenshot); actions.addWidget(shot,0,1)
+  folder=QPushButton('▱  فتح مجلد البيانات'); folder.clicked.connect(self.open_data_folder); actions.addWidget(folder,1,0,1,2)
+  cl.addLayout(actions)
+  note=QLabel('المشغّل تجريبي فقط؛ لا ينفذ أوامر اللعبة.'); note.setObjectName('muted'); cl.addWidget(note)
+  # Add the quick-control panel first so RTL places it on the right.
+  bot.addWidget(cf,2)
+  lf,ll=self.panel('سجل العمليات'); logtop=QHBoxLayout(); clear=QPushButton('مسح السجل'); clear.clicked.connect(self.clear_visible_logs); logtop.addStretch(); logtop.addWidget(clear); ll.addLayout(logtop)
+  self.dlog=QPlainTextEdit(); self.dlog.setReadOnly(True); self.dlog.setMinimumHeight(145); ll.addWidget(self.dlog); bot.addWidget(lf,3)
+  l.addLayout(bot,3)
+  foot=QLabel('Clash Automation Lab 1.0.0   •   © 2026'); foot.setObjectName('muted'); foot.setAlignment(Qt.AlignCenter); l.addWidget(foot)
+  self.pages.addWidget(p)
+
  def setup_table(self,t):
   t.setAlternatingRowColors(True); t.setSelectionBehavior(QTableWidget.SelectRows); t.setEditTriggers(QTableWidget.NoEditTriggers); t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
  def make_profiles(self):
@@ -111,7 +157,10 @@ class Window(QMainWindow):
  def adb(self):
   found=shutil.which('adb')
   if found:return found
-  x=Path.home()/'AppData'/'Local'/'Android'/'Sdk'/'platform-tools'/'adb.exe'; return str(x) if x.exists() else None
+  candidates=[Path(r'C:\\platform-tools\\adb.exe'),Path.home()/'AppData'/'Local'/'Android'/'Sdk'/'platform-tools'/'adb.exe']
+  for x in candidates:
+   if x.exists():return str(x)
+  return None
  def runadb(self,args,binary=False):
   exe=self.adb()
   if not exe:QMessageBox.warning(self,'ADB غير موجود','ثبّت Android Platform Tools وأضف platform-tools إلى PATH.'); self.log('لم يتم العثور على ADB.'); return None
@@ -135,6 +184,27 @@ class Window(QMainWindow):
   if data:
    try:Path(path).write_bytes(data); self.log('تم حفظ لقطة الشاشة: '+path); QMessageBox.information(self,'نجاح','تم حفظ لقطة الشاشة.')
    except Exception as e:QMessageBox.warning(self,'خطأ',str(e))
+ def restart_adb(self):
+  exe=self.adb()
+  if not exe:
+   QMessageBox.warning(self,'ADB غير موجود','تعذر العثور على adb.exe.'); return
+  try:
+   stop=subprocess.run([exe,'kill-server'],capture_output=True,timeout=10,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+   start=subprocess.run([exe,'start-server'],capture_output=True,timeout=15,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+   if start.returncode==0:
+    self.log('تمت إعادة تشغيل خادم ADB.'); self.list_devices()
+   else: QMessageBox.warning(self,'خطأ ADB',start.stderr.decode(errors='replace'))
+  except Exception as e: QMessageBox.warning(self,'خطأ ADB',str(e))
+ def open_data_folder(self):
+  try:
+   if sys.platform=='win32': subprocess.Popen(['explorer',str(ROOT)])
+   else: QMessageBox.information(self,'مجلد البيانات',str(ROOT))
+   self.log('تم فتح مجلد بيانات البرنامج.')
+  except Exception as e: QMessageBox.warning(self,'خطأ',str(e))
+ def clear_visible_logs(self):
+  self.dlog.clear()
+  if hasattr(self,'fulllog'): self.fulllog.clear()
+  self.log('تم مسح السجل الظاهر.')
  def start_demo(self):self.running=True; self.start.setEnabled(False); self.stop.setEnabled(True); self.c4.value.setText('يعمل'); self.navstatus.setText('تشغيل تجريبي'); self.log('بدأ المشغّل التجريبي؛ لا توجد أوامر لعب تُنفّذ.')
  def stop_demo(self):self.running=False; self.start.setEnabled(True); self.stop.setEnabled(False); self.c4.value.setText('جاهز'); self.navstatus.setText('جاهز'); self.log('تم إيقاف المشغّل التجريبي.')
 if __name__=='__main__':
