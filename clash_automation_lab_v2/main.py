@@ -6,7 +6,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import *
 
-ROOT=Path(__file__).resolve().parent
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 DB=ROOT/'profiles.db'
 STYLE='''
 * {font-family:"Segoe UI",Arial; font-size:13px}
