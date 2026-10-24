@@ -96,40 +96,37 @@ class BotConfigPage(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         body = QWidget()
         body.setLayoutDirection(Qt.RightToLeft)
-        layout = QVBoxLayout(body)
-        layout.setContentsMargins(2, 4, 8, 4)
-        layout.setSpacing(10)
-        for group_name, fields in groups:
+
+        def make_group(group_name, fields):
             box = QGroupBox(group_name)
             box.setLayoutDirection(Qt.RightToLeft)
             grid = QGridLayout(box)
+            grid.setContentsMargins(10, 16, 10, 10)
             grid.setHorizontalSpacing(14)
             grid.setVerticalSpacing(10)
             for idx, field in enumerate(fields):
-                label = field[0]
-                kind = field[1]
+                label, kind, default = field[0], field[1], field[2]
                 key = section_name + '.' + label
-                default = field[2]
-                widget = None
                 if kind == 'check':
                     widget = QCheckBox(label)
-                    widget.setChecked(self._load_value(key, default).lower() in ('true','1','yes'))
+                    widget.setChecked(self._load_value(key, default).lower() in ('true', '1', 'yes'))
                     widget.toggled.connect(lambda value, k=key: self._save_value(k, value))
-                    grid.addWidget(widget, idx // 2, idx % 2, 1, 1)
+                    grid.addWidget(widget, idx // 2, idx % 2, 1, 2)
                 else:
                     caption = QLabel(label)
                     if kind == 'spin':
                         widget = QSpinBox()
                         widget.setRange(field[3], field[4])
                         widget.setGroupSeparatorShown(True)
-                        try: widget.setValue(int(self._load_value(key, default)))
-                        except ValueError: widget.setValue(int(default))
+                        try:
+                            widget.setValue(int(self._load_value(key, default)))
+                        except ValueError:
+                            widget.setValue(int(default))
                         widget.valueChanged.connect(lambda value, k=key: self._save_value(k, value))
                     elif kind == 'combo':
                         widget = QComboBox()
                         widget.addItems(field[2])
-                        current = self._load_value(key, field[3])
-                        widget.setCurrentText(current)
+                        widget.setCurrentText(self._load_value(key, field[3]))
                         widget.currentTextChanged.connect(lambda value, k=key: self._save_value(k, value))
                     elif kind == 'text':
                         widget = QLineEdit()
@@ -140,11 +137,30 @@ class BotConfigPage(QWidget):
                     grid.addWidget(caption, row, col)
                     grid.addWidget(widget, row, col + 1)
                 self.controls[key] = widget
-            layout.addWidget(box)
-        layout.addStretch()
+            return box
+
+        if section_name == 'عام':
+            body_layout = QGridLayout(body)
+            body_layout.setContentsMargins(2, 4, 8, 4)
+            body_layout.setHorizontalSpacing(10)
+            body_layout.setVerticalSpacing(10)
+            widgets = [make_group(name, fields) for name, fields in groups]
+            positions = [(0, 0, 1, 2), (1, 0, 1, 2), (2, 0, 1, 1), (2, 1, 1, 1), (3, 0, 1, 2)]
+            for widget, (row, col, rowspan, colspan) in zip(widgets, positions):
+                body_layout.addWidget(widget, row, col, rowspan, colspan)
+            body_layout.setColumnStretch(0, 1)
+            body_layout.setColumnStretch(1, 1)
+            body_layout.setRowStretch(4, 1)
+        else:
+            body_layout = QVBoxLayout(body)
+            body_layout.setContentsMargins(2, 4, 8, 4)
+            body_layout.setSpacing(10)
+            for group_name, fields in groups:
+                body_layout.addWidget(make_group(group_name, fields))
+            body_layout.addStretch()
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
-        footer = QLabel('تُحفظ هذه الخيارات محلياً. ربطها بمحرك تنفيذ اللعبة يتم على مراحل لاحقة.')
+        footer = QLabel('تُحفظ الخيارات تلقائياً على هذا الجهاز. ربطها بمحرك تنفيذ اللعبة يتم على مراحل لاحقة.')
         footer.setObjectName('muted')
         outer.addWidget(footer)
         return page
