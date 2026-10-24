@@ -1,4 +1,5 @@
 import sys, sqlite3, subprocess, shutil
+from task_page import TasksPage
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt
@@ -38,7 +39,7 @@ class Card(QFrame):
 class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
-  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.make_text_page('المهام',['إدارة مهام عامة ستُضاف في المرحلة التالية.','المشغّل الحالي تجريبي فقط.']); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
+  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.pages.addWidget(TasksPage(self)); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
   self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0'])
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
