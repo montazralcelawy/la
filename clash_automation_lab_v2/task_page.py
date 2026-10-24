@@ -136,6 +136,7 @@ class TasksPage(QWidget):
         for label, fn, obj in [('＋ إنشاء مهمة', self.create_task, 'primary'),
                                ('⟳ تحديث الأجهزة', self.refresh_devices, ''),
                                ('▶ تشغيل المحددة', self.run_task, 'green'),
+                               ('▶ تشغيل كل الجاهزة', self.run_queue, 'green'),
                                ('■ إيقاف المهمة', self.stop_task, 'red'),
                                ('حذف المهمة', self.delete_task, 'red')]:
             b = QPushButton(label)
@@ -161,6 +162,8 @@ class TasksPage(QWidget):
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
+        self.queue_ids = []
+        self.queue_running = False
         con = db()
         con.execute("UPDATE tasks SET status='متوقفة',result='أُعيد تشغيل البرنامج قبل اكتمال المهمة.' WHERE status='قيد التشغيل'")
         con.commit()
@@ -248,13 +251,48 @@ class TasksPage(QWidget):
             for j, value in enumerate(vals):
                 self.table.setItem(i, j, QTableWidgetItem(str(value)))
 
-    def run_task(self):
+    def run_queue(self, checked=False):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'انتظر انتهاء المهمة الحالية قبل تشغيل قائمة المهام.')
+            return
+        con = db()
+        self.queue_ids = [row[0] for row in con.execute(
+            "SELECT id FROM tasks WHERE status='جاهزة' ORDER BY id ASC").fetchall()]
+        con.close()
+        if not self.queue_ids:
+            QMessageBox.information(self, 'لا توجد مهام جاهزة', 'أنشئ مهام أو أعد المهام المطلوبة إلى حالة جاهزة أولاً.')
+            return
+        self.queue_running = True
+        self.window.log('بدأ تنفيذ قائمة من ' + str(len(self.queue_ids)) + ' مهمة.')
+        self.run_next_queued_task()
+
+    def run_next_queued_task(self):
+        if not self.queue_running:
+            return
+        if not self.queue_ids:
+            self.queue_running = False
+            self.window.log('اكتمل تنفيذ قائمة المهام.')
+            QMessageBox.information(self, 'اكتملت القائمة', 'انتهى تنفيذ جميع المهام الجاهزة. راجع حالة ونتيجة كل مهمة في الجدول.')
+            return
+        task_id = self.queue_ids.pop(0)
+        for row in range(self.table.rowCount()):
+            if int(self.table.item(row, 0).text()) == task_id:
+                self.table.selectRow(row)
+                self.run_task(quiet=True, from_queue=True)
+                return
+        self.window.log('تم تجاوز مهمة غير موجودة في الجدول: ' + str(task_id))
+        self.run_next_queued_task()
+
+    def run_task(self, checked=False, quiet=False, from_queue=False):
         if self.worker is not None and self.worker.isRunning():
             QMessageBox.information(self, 'المهمة قيد التنفيذ', 'انتظر انتهاء المهمة الحالية قبل تشغيل مهمة أخرى.')
             return
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
+            if not quiet:
+                QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
+            if from_queue:
+                self.run_next_queued_task()
             return
         task_id = int(self.table.item(row, 0).text())
         con = db()
@@ -263,8 +301,13 @@ class TasksPage(QWidget):
         if not task:
             return
         name, serial, action, old_status = task
+        if old_status != 'جاهزة' and from_queue:
+            self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأن حالتها ليست جاهزة.')
+            self.run_next_queued_task()
+            return
         if old_status == 'قيد التشغيل':
-            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'هذه المهمة مسجلة على أنها قيد التشغيل بالفعل.')
+            if not quiet:
+                QMessageBox.information(self, 'المهمة قيد التنفيذ', 'هذه المهمة مسجلة على أنها قيد التشغيل بالفعل.')
             return
         con = db()
         con.execute("UPDATE tasks SET status='قيد التشغيل',result='' WHERE id=?", (task_id,))
@@ -277,6 +320,10 @@ class TasksPage(QWidget):
         self.worker.start()
 
     def stop_task(self):
+        if self.queue_running:
+            self.queue_running = False
+            self.queue_ids = []
+            self.window.log('تم إيقاف قائمة المهام؛ ستتوقف المهمة الحالية إن كانت قيد التنفيذ.')
         if self.worker is None or not self.worker.isRunning():
             QMessageBox.information(self, 'لا توجد مهمة نشطة', 'لا توجد مهمة قيد التنفيذ حالياً.')
             return
@@ -290,11 +337,14 @@ class TasksPage(QWidget):
         con.close()
         self.window.log('المهمة «' + name + '»: ' + status + ' — ' + result)
         self.reload_tasks()
+        self.worker = None
+        if self.queue_running:
+            self.run_next_queued_task()
+            return
         if status == 'نجحت':
             QMessageBox.information(self, 'اكتملت المهمة', result)
         elif status == 'فشلت':
             QMessageBox.warning(self, 'تعذر إكمال المهمة', result or 'لم تنجح المهمة.')
-        self.worker = None
 
     def delete_task(self):
         if self.worker is not None and self.worker.isRunning():
