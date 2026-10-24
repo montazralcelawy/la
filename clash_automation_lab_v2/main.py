@@ -130,7 +130,7 @@ class Window(QMainWindow):
    for r,x in enumerate(rows):
     vals=[x[0],x[1],x[2],x[3],'نعم' if x[5] else 'لا'] if full else [('مفعّل' if x[5] else 'متوقف'),x[3] or '—',x[4],x[2] or '—',x[1]]
     for col,v in enumerate(vals):table.setItem(r,col,QTableWidgetItem(str(v)))
-  self.c1.value.setText(str(len(rows))); self.c2.value.setText(str(sum(1 for x in rows if x[5])))
+  self.c1.value.setText(str(len(rows))); self.c1.findChildren(QLabel)[1].setText(f'{sum(1 for x in rows if x[5])} نشطة'); self.c2.value.setText('0')
  def new_and_open(self):self.clear_form(); self.switch(1)
  def clear_form(self):
   self.selected=None; self.ftable.clearSelection(); self.name.clear(); self.serial.clear(); self.village.clear(); self.task.setCurrentIndex(0); self.notes.clear(); self.enabled.setChecked(True)
