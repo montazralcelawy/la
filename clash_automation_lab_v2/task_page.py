@@ -51,6 +51,7 @@ class TaskWorker(QThread):
                                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic() + 25
             stdout, stderr = b'', b''
+            timed_out = False
             while True:
                 if self.cancel_requested.is_set() and self.process.poll() is None:
                     self.process.terminate()
@@ -58,6 +59,7 @@ class TaskWorker(QThread):
                 if remaining <= 0 and self.process.poll() is None:
                     self.process.kill()
                     stdout, stderr = self.process.communicate()
+                    timed_out = True
                     result = 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
                     break
                 try:
@@ -67,6 +69,8 @@ class TaskWorker(QThread):
                     continue
             if self.cancel_requested.is_set():
                 status, result = 'أُلغيت', 'أُوقف تنفيذ المهمة بطلب المستخدم.'
+            elif timed_out:
+                status, result = 'فشلت', 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
             elif self.process.returncode != 0:
                 result = stderr.decode(errors='replace').strip() or 'فشل أمر ADB؛ تحقق من اتصال الجهاز.'
             elif self.action == 'check':
