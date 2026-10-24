@@ -336,6 +336,8 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'لا توجد مهام جاهزة', 'أنشئ مهام أو أعد المهام المطلوبة إلى حالة جاهزة أولاً.')
             return
         self.queue_running = True
+        if hasattr(self.window, 'queue_state_changed'):
+            self.window.queue_state_changed(True)
         self.window.log('بدأ تنفيذ قائمة من ' + str(len(self.queue_ids)) + ' مهمة.')
         self.run_next_queued_task()
 
@@ -344,6 +346,8 @@ class TasksPage(QWidget):
             return
         if not self.queue_ids:
             self.queue_running = False
+            if hasattr(self.window, 'queue_state_changed'):
+                self.window.queue_state_changed(False)
             self.window.log('اكتمل تنفيذ قائمة المهام.')
             QMessageBox.information(self, 'اكتملت القائمة', 'انتهى تنفيذ جميع المهام الجاهزة. راجع حالة ونتيجة كل مهمة في الجدول.')
             return
@@ -400,6 +404,8 @@ class TasksPage(QWidget):
         if self.queue_running:
             self.queue_running = False
             self.queue_ids = []
+            if hasattr(self.window, 'queue_state_changed'):
+                self.window.queue_state_changed(False)
             self.window.log('تم إيقاف قائمة المهام؛ ستتوقف المهمة الحالية إن كانت قيد التنفيذ.')
         if self.worker is None or not self.worker.isRunning():
             QMessageBox.information(self, 'لا توجد مهمة نشطة', 'لا توجد مهمة قيد التنفيذ حالياً.')
