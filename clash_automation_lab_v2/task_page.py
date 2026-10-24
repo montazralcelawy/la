@@ -50,15 +50,21 @@ class TaskWorker(QThread):
             self.process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic() + 25
-            while self.process.poll() is None and time.monotonic() < deadline:
-                if self.cancel_requested.is_set():
+            stdout, stderr = b'', b''
+            while True:
+                if self.cancel_requested.is_set() and self.process.poll() is None:
                     self.process.terminate()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 and self.process.poll() is None:
+                    self.process.kill()
+                    stdout, stderr = self.process.communicate()
+                    result = 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
                     break
-                time.sleep(0.1)
-            if self.process.poll() is None:
-                self.process.kill()
-                result = 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
-            stdout, stderr = self.process.communicate()
+                try:
+                    stdout, stderr = self.process.communicate(timeout=min(0.1, max(0.01, remaining)))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
             if self.cancel_requested.is_set():
                 status, result = 'أُلغيت', 'أُوقف تنفيذ المهمة بطلب المستخدم.'
             elif self.process.returncode != 0:
