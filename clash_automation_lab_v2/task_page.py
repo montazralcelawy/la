@@ -49,6 +49,7 @@ class TasksPage(QWidget):
         for label, fn, obj in [('＋ إنشاء مهمة', self.create_task, 'primary'),
                                ('⟳ تحديث الأجهزة', self.refresh_devices, ''),
                                ('▶ تشغيل المحددة', self.run_task, 'green'),
+                               ('■ إيقاف المهمة', self.stop_task, 'red'),
                                ('حذف المهمة', self.delete_task, 'red')]:
             b = QPushButton(label)
             if obj:
@@ -72,6 +73,7 @@ class TasksPage(QWidget):
         note = QLabel('تنفذ هذه الصفحة فحص اتصال ADB أو حفظ لقطة شاشة محلية فقط.')
         note.setObjectName('muted')
         layout.addWidget(note)
+        self.worker = None
         self.reload_profiles()
         self.reload_tasks()
 
@@ -153,38 +155,40 @@ class TasksPage(QWidget):
                 self.table.setItem(i, j, QTableWidgetItem(str(value)))
 
     def run_task(self):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'انتظر انتهاء المهمة الحالية قبل تشغيل مهمة أخرى.')
+            return
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
             return
         task_id = int(self.table.item(row, 0).text())
         con = db()
-        task = con.execute('SELECT name,serial,action FROM tasks WHERE id=?', (task_id,)).fetchone()
+        task = con.execute('SELECT name,serial,action,status FROM tasks WHERE id=?', (task_id,)).fetchone()
         con.close()
         if not task:
             return
-        name, serial, action = task
-        status, result = 'فشلت', ''
-        try:
-            if action == 'check':
-                output = self.window.runadb(['-s', serial, 'get-state'])
-                if output is not None and output.strip() == 'device':
-                    status, result = 'نجحت', 'الجهاز متصل وجاهز'
-                else:
-                    result = 'لم يرجع الجهاز حالة اتصال سليمة'
-            else:
-                data = self.window.runadb(['-s', serial, 'exec-out', 'screencap', '-p'], True)
-                if data and data[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
-                    folder = ROOT / 'screenshots'
-                    folder.mkdir(exist_ok=True)
-                    safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in serial)
-                    path = folder / (safe + '_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
-                    path.write_bytes(data)
-                    status, result = 'نجحت', 'حُفظت اللقطة: ' + str(path)
-                else:
-                    result = 'تعذر التقاط الشاشة؛ تحقق من اتصال الجهاز'
-        except Exception as exc:
-            result = str(exc)
+        name, serial, action, old_status = task
+        if old_status == 'قيد التشغيل':
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'هذه المهمة مسجلة على أنها قيد التشغيل بالفعل.')
+            return
+        con = db()
+        con.execute("UPDATE tasks SET status='قيد التشغيل',result='' WHERE id=?", (task_id,))
+        con.commit()
+        con.close()
+        self.reload_tasks()
+        self.window.log('بدأت المهمة «' + name + '».')
+        self.worker = TaskWorker(task_id, name, serial, action, self.window.adb())
+        self.worker.completed.connect(self.task_finished)
+        self.worker.start()
+
+    def stop_task(self):
+        if self.worker is None or not self.worker.isRunning():
+            QMessageBox.information(self, 'لا توجد مهمة نشطة', 'لا توجد مهمة قيد التنفيذ حالياً.')
+            return
+        QMessageBox.information(self, 'المهمة قيد التنفيذ', 'سيكتمل أمر ADB الحالي أو تنتهي مهلته خلال 25 ثانية. الإيقاف الفوري سيضاف في تحديث لاحق.')
+
+    def task_finished(self, task_id, status, result, name):
         con = db()
         con.execute('UPDATE tasks SET status=?,result=? WHERE id=?', (status, result, task_id))
         con.commit()
@@ -195,6 +199,7 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'اكتملت المهمة', result)
         else:
             QMessageBox.warning(self, 'تعذر إكمال المهمة', result or 'لم تنجح المهمة.')
+        self.worker = None
 
     def delete_task(self):
         row = self.table.currentRow()
