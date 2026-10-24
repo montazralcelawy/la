@@ -46,7 +46,13 @@ class TaskWorker(QThread):
             if not self.adb_path:
                 raise RuntimeError('لم يتم العثور على ADB. تحقق من Android Platform Tools.')
             args = [self.adb_path, '-s', self.serial]
-            args += ['get-state'] if self.action == 'check' else ['exec-out', 'screencap', '-p']
+            if self.action == 'check':
+                args += ['get-state']
+            elif self.action == 'launch_game':
+                args += ['shell', 'monkey', '-p', 'com.supercell.clashofclans',
+                         '-c', 'android.intent.category.LAUNCHER', '1']
+            else:
+                args += ['exec-out', 'screencap', '-p']
             self.process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic() + 25
@@ -79,6 +85,11 @@ class TaskWorker(QThread):
                     status, result = 'نجحت', 'الجهاز متصل وجاهز.'
                 else:
                     result = 'حالة الجهاز غير متوقعة: ' + (state or 'لا توجد استجابة')
+            elif self.action == 'launch_game':
+                output = stdout.decode(errors='replace').strip()
+                status, result = 'نجحت', 'تم إرسال أمر فتح Clash of Clans إلى الجهاز.'
+                if output:
+                    result += ' ' + output
             elif stdout[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
                 folder = ROOT / 'screenshots'
                 folder.mkdir(exist_ok=True)
@@ -115,6 +126,7 @@ class TasksPage(QWidget):
         self.action = QComboBox()
         self.action.addItem('اختبار اتصال ADB', 'check')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
+        self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         form.addRow('اسم المهمة:', self.name)
         form.addRow('ملف التعريف:', self.profile)
         form.addRow('الجهاز:', self.device)
@@ -181,6 +193,8 @@ class TasksPage(QWidget):
         self.device.addItem(serial or 'حدّث الأجهزة المتصلة لاختيار جهاز', serial)
 
     def refresh_devices(self):
+        # Reuse the main window's local BlueStacks port discovery before listing devices.
+        self.window.list_devices()
         output = self.window.runadb(['devices'])
         if output is None:
             return
@@ -226,7 +240,8 @@ class TasksPage(QWidget):
                               FROM tasks t LEFT JOIN profiles p ON p.id=t.profile_id ORDER BY t.id DESC""").fetchall()
         con.close()
         self.table.setRowCount(len(rows))
-        names = {'check': 'اختبار اتصال', 'screenshot': 'لقطة شاشة'}
+        names = {'check': 'اختبار اتصال', 'screenshot': 'لقطة شاشة',
+                 'launch_game': 'فتح Clash of Clans'}
         for i, row in enumerate(rows):
             vals = [row[0], row[1], row[2] or '—', row[3] or '—',
                     names.get(row[4], row[4]), row[5] + (': ' + row[6] if row[6] else '')]
