@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from pathlib import Path
 from datetime import datetime
 import subprocess
@@ -18,6 +19,9 @@ def db():
         serial TEXT DEFAULT '', action TEXT NOT NULL,
         status TEXT DEFAULT 'جاهزة', result TEXT DEFAULT '',
         created TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    columns = {row[1] for row in con.execute('PRAGMA table_info(tasks)').fetchall()}
+    if 'params' not in columns:
+        con.execute("ALTER TABLE tasks ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
     con.commit()
     return con
 
@@ -25,13 +29,14 @@ def db():
 class TaskWorker(QThread):
     completed = Signal(int, str, str, str)
 
-    def __init__(self, task_id, name, serial, action, adb_path):
+    def __init__(self, task_id, name, serial, action, adb_path, params=None):
         super().__init__()
         self.task_id = task_id
         self.task_name = name
         self.serial = serial
         self.action = action
         self.adb_path = adb_path
+        self.params = params or {}
         self.cancel_requested = threading.Event()
         self.process = None
 
@@ -43,64 +48,95 @@ class TaskWorker(QThread):
     def run(self):
         status, result = 'فشلت', ''
         try:
-            if not self.adb_path:
-                raise RuntimeError('لم يتم العثور على ADB. تحقق من Android Platform Tools.')
-            args = [self.adb_path, '-s', self.serial]
-            if self.action == 'check':
-                args += ['get-state']
-            elif self.action == 'launch_game':
-                args += ['shell', 'monkey', '-p', 'com.supercell.clashofclans',
-                         '-c', 'android.intent.category.LAUNCHER', '1']
-            else:
-                args += ['exec-out', 'screencap', '-p']
-            self.process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-            deadline = time.monotonic() + 25
-            stdout, stderr = b'', b''
-            timed_out = False
-            while True:
-                if self.cancel_requested.is_set() and self.process.poll() is None:
-                    self.process.terminate()
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 and self.process.poll() is None:
-                    self.process.kill()
-                    stdout, stderr = self.process.communicate()
-                    timed_out = True
-                    result = 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
-                    break
-                try:
-                    stdout, stderr = self.process.communicate(timeout=min(0.1, max(0.01, remaining)))
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-            if self.cancel_requested.is_set():
-                status, result = 'أُلغيت', 'أُوقف تنفيذ المهمة بطلب المستخدم.'
-            elif timed_out:
-                status, result = 'فشلت', 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
-            elif self.process.returncode != 0:
-                result = stderr.decode(errors='replace').strip() or 'فشل أمر ADB؛ تحقق من اتصال الجهاز.'
-            elif self.action == 'check':
-                state = stdout.decode(errors='replace').strip()
-                if state == 'device':
-                    status, result = 'نجحت', 'الجهاز متصل وجاهز.'
+            if self.action == 'wait':
+                duration = max(0, min(int(self.params.get('duration_ms', 1000)), 3600000))
+                if self.cancel_requested.wait(duration / 1000):
+                    status, result = 'أُلغيت', 'أُوقف الانتظار بطلب المستخدم.'
                 else:
-                    result = 'حالة الجهاز غير متوقعة: ' + (state or 'لا توجد استجابة')
-            elif self.action == 'launch_game':
-                output = stdout.decode(errors='replace').strip()
-                status, result = 'نجحت', 'تم إرسال أمر فتح Clash of Clans إلى الجهاز.'
-                if output:
-                    result += ' ' + output
-            elif stdout[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
-                folder = ROOT / 'screenshots'
-                folder.mkdir(exist_ok=True)
-                safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in self.serial)
-                path = folder / (safe + '_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
-                path.write_bytes(stdout)
-                status, result = 'نجحت', 'حُفظت اللقطة: ' + str(path)
+                    status, result = 'نجحت', f'انتهى الانتظار لمدة {duration} مللي ثانية.'
             else:
-                result = 'تعذر التقاط صورة صالحة؛ تحقق من اتصال الجهاز.'
+                if not self.adb_path:
+                    raise RuntimeError('لم يتم العثور على ADB. تحقق من Android Platform Tools.')
+                if not self.serial:
+                    raise RuntimeError('لم يتم تحديد جهاز ADB لهذه المهمة.')
+                args = [self.adb_path, '-s', self.serial]
+                if self.action == 'check':
+                    args += ['get-state']
+                elif self.action == 'launch_game':
+                    args += ['shell', 'monkey', '-p', self.params.get('package', 'com.supercell.clashofclans'),
+                             '-c', 'android.intent.category.LAUNCHER', '1']
+                elif self.action == 'tap':
+                    args += ['shell', 'input', 'tap', str(int(self.params.get('x', 0))),
+                             str(int(self.params.get('y', 0)))]
+                elif self.action == 'swipe':
+                    args += ['shell', 'input', 'swipe',
+                             str(int(self.params.get('x', 0))), str(int(self.params.get('y', 0))),
+                             str(int(self.params.get('x2', 0))), str(int(self.params.get('y2', 0))),
+                             str(int(self.params.get('duration_ms', 500)))]
+                elif self.action == 'press_back':
+                    args += ['shell', 'input', 'keyevent', '4']
+                elif self.action == 'press_home':
+                    args += ['shell', 'input', 'keyevent', '3']
+                elif self.action == 'screenshot':
+                    args += ['exec-out', 'screencap', '-p']
+                else:
+                    raise RuntimeError('نوع المهمة غير مدعوم: ' + str(self.action))
+
+                self.process = subprocess.Popen(
+                    args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                deadline = time.monotonic() + 25
+                stdout, stderr = b'', b''
+                timed_out = False
+                while True:
+                    if self.cancel_requested.is_set() and self.process.poll() is None:
+                        self.process.terminate()
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 and self.process.poll() is None:
+                        self.process.kill()
+                        stdout, stderr = self.process.communicate()
+                        timed_out = True
+                        break
+                    try:
+                        stdout, stderr = self.process.communicate(timeout=min(0.1, max(0.01, remaining)))
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
+
+                if self.cancel_requested.is_set():
+                    status, result = 'أُلغيت', 'أُوقف تنفيذ المهمة بطلب المستخدم.'
+                elif timed_out:
+                    result = 'انتهت مهلة تنفيذ ADB بعد 25 ثانية.'
+                elif self.process.returncode != 0:
+                    result = stderr.decode(errors='replace').strip() or 'فشل أمر ADB؛ تحقق من اتصال الجهاز.'
+                elif self.action == 'check':
+                    state = stdout.decode(errors='replace').strip()
+                    if state == 'device':
+                        status, result = 'نجحت', 'الجهاز متصل وجاهز.'
+                    else:
+                        result = 'حالة الجهاز غير متوقعة: ' + (state or 'لا توجد استجابة')
+                elif self.action == 'screenshot':
+                    if stdout[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
+                        folder = ROOT / 'screenshots'
+                        folder.mkdir(exist_ok=True)
+                        safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in self.serial)
+                        path = folder / (safe + '_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.png')
+                        path.write_bytes(stdout)
+                        status, result = 'نجحت', 'حُفظت اللقطة: ' + str(path)
+                    else:
+                        result = 'تعذر التقاط صورة صالحة؛ تحقق من اتصال الجهاز.'
+                else:
+                    status = 'نجحت'
+                    messages = {
+                        'launch_game': 'تم إرسال أمر فتح التطبيق إلى الجهاز.',
+                        'tap': f'تم إرسال أمر اللمس إلى الإحداثيات ({self.params.get("x", 0)}, {self.params.get("y", 0)}).',
+                        'swipe': 'تم إرسال أمر السحب إلى الجهاز.',
+                        'press_back': 'تم إرسال أمر الرجوع إلى الجهاز.',
+                        'press_home': 'تم إرسال أمر الشاشة الرئيسية إلى الجهاز.',
+                    }
+                    result = messages.get(self.action, 'تم تنفيذ أمر ADB.')
         except Exception as exc:
-            result = str(exc)
+            status, result = 'فشلت', str(exc)
         self.completed.emit(self.task_id, status, result, self.task_name)
 
 
@@ -127,6 +163,25 @@ class TasksPage(QWidget):
         self.action.addItem('اختبار اتصال ADB', 'check')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
+        self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
+        self.action.addItem('سحب الشاشة بين إحداثيات', 'swipe')
+        self.action.addItem('انتظار لمدة محددة', 'wait')
+        self.action.addItem('زر الرجوع', 'press_back')
+        self.action.addItem('زر الشاشة الرئيسية', 'press_home')
+        self.x = QSpinBox(); self.x.setRange(0, 10000)
+        self.y = QSpinBox(); self.y.setRange(0, 10000)
+        self.x2 = QSpinBox(); self.x2.setRange(0, 10000)
+        self.y2 = QSpinBox(); self.y2.setRange(0, 10000)
+        self.duration = QSpinBox(); self.duration.setRange(0, 3600000); self.duration.setValue(500)
+        self.package = QLineEdit('com.supercell.clashofclans')
+        form.addRow('X / بداية السحب:', self.x)
+        form.addRow('Y / بداية السحب:', self.y)
+        form.addRow('X2 / نهاية السحب:', self.x2)
+        form.addRow('Y2 / نهاية السحب:', self.y2)
+        form.addRow('المدة (مللي ثانية):', self.duration)
+        form.addRow('حزمة التطبيق:', self.package)
+        self.action.currentIndexChanged.connect(self.action_changed)
+        self.action_changed()
         form.addRow('اسم المهمة:', self.name)
         form.addRow('ملف التعريف:', self.profile)
         form.addRow('الجهاز:', self.device)
@@ -222,20 +277,33 @@ class TasksPage(QWidget):
             return
         profile = self.profile.currentData()
         serial = self.device.currentData() or ''
-        if not serial:
+        if not serial and self.action.currentData() != 'wait':
             QMessageBox.warning(self, 'الجهاز غير محدد', 'حدد Serial في ملف التعريف أو حدّث قائمة الأجهزة.')
             return
         if profile and not profile[2]:
             QMessageBox.warning(self, 'ملف معطّل', 'فعّل ملف التعريف قبل إنشاء المهمة.')
             return
+        params = {'x': self.x.value(), 'y': self.y.value(), 'x2': self.x2.value(),
+                  'y2': self.y2.value(), 'duration_ms': self.duration.value(),
+                  'package': self.package.text().strip() or 'com.supercell.clashofclans'}
         con = db()
-        con.execute('INSERT INTO tasks(name,profile_id,serial,action,status,result) VALUES(?,?,?,?,?,?)',
-                    (name, profile[0] if profile else None, serial, self.action.currentData(), 'جاهزة', ''))
+        con.execute('INSERT INTO tasks(name,profile_id,serial,action,status,result,params) VALUES(?,?,?,?,?,?,?)',
+                    (name, profile[0] if profile else None, serial, self.action.currentData(), 'جاهزة', '',
+                     json.dumps(params, ensure_ascii=False)))
         con.commit()
         con.close()
         self.name.clear()
         self.window.log('تم إنشاء المهمة: ' + name)
         self.reload_tasks()
+
+    def action_changed(self, *_):
+        action = self.action.currentData()
+        self.x.setEnabled(action in ('tap', 'swipe'))
+        self.y.setEnabled(action in ('tap', 'swipe'))
+        self.x2.setEnabled(action == 'swipe')
+        self.y2.setEnabled(action == 'swipe')
+        self.duration.setEnabled(action in ('swipe', 'wait'))
+        self.package.setEnabled(action == 'launch_game')
 
     def reload_tasks(self):
         con = db()
@@ -291,14 +359,20 @@ class TasksPage(QWidget):
                 return
             task_id = int(self.table.item(row, 0).text())
         con = db()
-        task = con.execute('SELECT name,serial,action,status FROM tasks WHERE id=?', (task_id,)).fetchone()
+        task = con.execute('SELECT name,serial,action,status,params FROM tasks WHERE id=?', (task_id,)).fetchone()
         con.close()
         if not task:
-            self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأنها لم تعد موجودة.')
+            self.window.log('تعذر العثور على المهمة ' + str(task_id) + '.')
             if from_queue:
                 self.run_next_queued_task()
             return
-        name, serial, action, old_status = task
+        name, serial, action, old_status, params_text = task
+        try:
+            params = json.loads(params_text or '{}')
+            if not isinstance(params, dict):
+                params = {}
+        except (TypeError, ValueError):
+            params = {}
         if from_queue and old_status != 'جاهزة':
             self.window.log('تم تجاوز المهمة ' + str(task_id) + ' لأن حالتها الحالية هي: ' + old_status)
             self.run_next_queued_task()
@@ -313,7 +387,7 @@ class TasksPage(QWidget):
         con.close()
         self.reload_tasks()
         self.window.log('بدأت المهمة «' + name + '» (ID: ' + str(task_id) + ').')
-        self.worker = TaskWorker(task_id, name, serial, action, self.window.adb())
+        self.worker = TaskWorker(task_id, name, serial, action, self.window.adb(), params)
         self.worker.completed.connect(self.task_finished)
         self.worker.start()
 
