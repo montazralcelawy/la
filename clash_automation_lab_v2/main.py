@@ -110,7 +110,17 @@ class Window(QMainWindow):
   p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title('المحاكي و ADB')); f,fl=self.panel('فحص اتصال Android Debug Bridge'); fl.addWidget(QLabel('اتصل بمحاكي محلي أو جهاز اختبار تملك صلاحية استخدامه.')); rr=QHBoxLayout()
   for txt,fn in [('فحص ADB',self.check_adb),('عرض الأجهزة',self.list_devices),('التقاط شاشة',self.screenshot)]:
    b=QPushButton(txt); b.clicked.connect(fn); rr.addWidget(b)
-  fl.addLayout(rr); self.adbout=QPlainTextEdit(); self.adbout.setReadOnly(True); fl.addWidget(self.adbout); l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
+  fl.addLayout(rr)
+  launchbox,launchlayout=self.panel('تشغيل تطبيق على الجهاز')
+  launchform=QFormLayout()
+  self.launchserial=QLineEdit(); self.launchserial.setPlaceholderText('مثال: emulator-5554')
+  self.package_name=QLineEdit('com.supercell.clashofclans')
+  launchform.addRow('معرّف الجهاز (Serial):',self.launchserial)
+  launchform.addRow('اسم حزمة التطبيق:',self.package_name)
+  launchlayout.addLayout(launchform)
+  launchbtn=QPushButton('▶ فتح اللعبة / التطبيق'); launchbtn.setObjectName('primary'); launchbtn.clicked.connect(self.launch_app); launchlayout.addWidget(launchbtn)
+  launchlayout.addWidget(QLabel('هذه الوظيفة تفتح التطبيق المثبت فقط؛ لا تسجل الدخول ولا تنفذ أوامر اللعب.'))
+  l.addWidget(f); l.addWidget(launchbox); self.adbout=QPlainTextEdit(); self.adbout.setReadOnly(True); self.adbout.setPlaceholderText('نتائج فحص ADB وتشغيل التطبيقات ستظهر هنا.'); l.addWidget(self.adbout,1); self.pages.addWidget(p)
  def make_text_page(self,heading,lines):
   p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title(heading)); f,fl=self.panel(heading)
   for s in lines: fl.addWidget(QLabel(s))
@@ -186,6 +196,17 @@ class Window(QMainWindow):
   if data:
    try:Path(path).write_bytes(data); self.log('تم حفظ لقطة الشاشة: '+path); QMessageBox.information(self,'نجاح','تم حفظ لقطة الشاشة.')
    except Exception as e:QMessageBox.warning(self,'خطأ',str(e))
+ def launch_app(self):
+  serial=self.launchserial.text().strip()
+  package=self.package_name.text().strip()
+  if not package or any(ch.isspace() for ch in package):
+   QMessageBox.warning(self,'اسم الحزمة غير صحيح','أدخل اسم حزمة Android صالحاً مثل com.supercell.clashofclans.'); return
+  args=(['-s',serial] if serial else [])+['shell','monkey','-p',package,'-c','android.intent.category.LAUNCHER','1']
+  out=self.runadb(args)
+  if out is not None:
+   self.adbout.appendPlainText('تشغيل التطبيق: '+package+'\\n'+out)
+   self.log('تم إرسال طلب فتح التطبيق '+package+' على '+(serial or 'الجهاز الافتراضي')+'.')
+   QMessageBox.information(self,'تم إرسال الطلب','أُرسل أمر فتح التطبيق إلى ADB. إذا لم يفتح، تحقق من اسم الحزمة واتصال الجهاز.')
  def restart_adb(self):
   exe=self.adb()
   if not exe:
