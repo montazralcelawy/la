@@ -52,6 +52,21 @@ class StrategyEngineTests(unittest.TestCase):
         obs = GameObservation(screen=Screen.BATTLE, confidence=0.99)
         self.assertEqual(self.engine.decide(obs).action, ActionType.WAIT)
 
+    def test_battle_returns_home_when_return_button_is_visible(self):
+        obs = GameObservation(
+            screen=Screen.BATTLE, confidence=0.99,
+            buttons={"return_home": target("return_home", 1400, 820)}
+        )
+        decision = self.engine.decide(obs)
+        self.assertEqual(decision.action, ActionType.END_BATTLE)
+        self.assertEqual(decision.target.name, "return_home")
+
+    def test_battle_does_not_tap_after_end_without_return_button(self):
+        obs = GameObservation(
+            screen=Screen.BATTLE, confidence=0.99, battle_ended=True
+        )
+        self.assertEqual(self.engine.decide(obs).action, ActionType.WAIT)
+
     def test_battle_deploys_only_to_provided_points(self):
         slot = target("troop", 100, 700)
         obs = GameObservation(
