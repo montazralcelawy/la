@@ -353,7 +353,7 @@ class TasksPage(QWidget):
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
         self.duration.setEnabled(action in ('swipe', 'wait'))
-        self.package.setEnabled(action == 'launch_game')
+        self.package.setEnabled(action in ('launch_game', 'check_game_installed'))
 
     def reload_tasks(self):
         con = db()
