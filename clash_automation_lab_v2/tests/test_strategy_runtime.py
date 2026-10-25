@@ -47,6 +47,13 @@ class StrategyRuntimeVisionTests(unittest.TestCase):
             self.assertIn("collect", observation.buttons)
             self.assertEqual((observation.buttons["collect"].x, observation.buttons["collect"].y), (108, 67))
 
+    def test_empty_starter_config_requires_screen_templates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config_path = Path(folder) / "vision.json"
+            config_path.write_text(json.dumps({"screen_templates": {}, "button_templates": {}}), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "screen_templates"):
+                TemplateVision(str(config_path))
+
     def test_missing_config_fails_with_clear_error(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(RuntimeError, "غير موجود"):
