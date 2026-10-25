@@ -136,11 +136,30 @@ class Window(QMainWindow):
   actions=QHBoxLayout()
   save=QPushButton('حفظ الإعدادات'); save.setObjectName('primary'); save.clicked.connect(self.save_app_settings); actions.addWidget(save)
   test=QPushButton('حفظ واختبار ADB'); test.clicked.connect(self.test_saved_adb); actions.addWidget(test)
+  backup=QPushButton('إنشاء نسخة احتياطية'); backup.clicked.connect(self.backup_database); actions.addWidget(backup)
   fl.addLayout(actions)
   fl.addWidget(QLabel('يمكن ترك المسار فارغاً إذا كان ADB موجوداً في PATH أو في أحد المسارات المعروفة.'))
   warning=QLabel('لا تحفظ كلمات مرور أو رموز تسجيل الدخول هنا. إعدادات البوت لا تتحول تلقائياً إلى استراتيجية لعب مستقلة.')
   warning.setObjectName('muted'); fl.addWidget(warning)
   l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
+ def backup_database(self):
+  default=ROOT / ('profiles_backup_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.db')
+  path,_=QFileDialog.getSaveFileName(self,'حفظ نسخة احتياطية لقاعدة البيانات',str(default),'SQLite Database (*.db)')
+  if not path:return
+  source=None; destination=None
+  try:
+   source=sqlite3.connect(DB)
+   destination=sqlite3.connect(path)
+   source.backup(destination)
+   destination.close(); destination=None
+   source.close(); source=None
+   self.log('تم إنشاء نسخة احتياطية لقاعدة البيانات: '+path)
+   QMessageBox.information(self,'نجاح النسخ الاحتياطي','تم حفظ نسخة قاعدة البيانات بنجاح.')
+  except Exception as exc:
+   QMessageBox.warning(self,'فشل النسخ الاحتياطي',str(exc))
+  finally:
+   if destination is not None:destination.close()
+   if source is not None:source.close()
  def browse_adb_path(self):
   path,_=QFileDialog.getOpenFileName(self,'اختر adb.exe',str(Path.home()),'ADB executable (adb.exe);;All files (*)')
   if path:self.adb_path_input.setText(path)
