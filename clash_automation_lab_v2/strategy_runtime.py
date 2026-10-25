@@ -240,12 +240,32 @@ class ADBStrategyRuntime:
             raise RuntimeError(result.stderr.decode(errors="replace").strip() or "فشل أمر ADB.")
         return result.stdout
 
-    def _ensure_game_foreground(self):
+    def _game_is_foreground(self):
         output = self._run(["shell", "dumpsys", "window", "windows"], timeout=8)
         lines = [line for line in output.decode(errors="replace").splitlines()
                  if "mCurrentFocus" in line or "mFocusedApp" in line]
-        if not any(self.package in line for line in lines):
+        return any(self.package in line for line in lines)
+
+    def _ensure_game_foreground(self):
+        if not self._game_is_foreground():
             raise RuntimeError("توقفت الأتمتة لأن اللعبة ليست في المقدمة.")
+
+    def _launch_game_if_needed(self, cancelled):
+        if self._game_is_foreground():
+            return
+        package_path = self._run(["shell", "pm", "path", self.package], timeout=10)
+        if not package_path.decode(errors="replace").strip().startswith("package:"):
+            raise RuntimeError("لعبة Clash of Clans غير مثبتة على الجهاز المحدد.")
+        self._run(["shell", "monkey", "-p", self.package,
+                   "-c", "android.intent.category.LAUNCHER", "1"], timeout=15)
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            if cancelled():
+                raise RuntimeError("أوقف المستخدم التشغيل أثناء فتح اللعبة.")
+            if self._game_is_foreground():
+                return
+            time.sleep(0.75)
+        raise RuntimeError("أُرسل أمر فتح اللعبة لكن لم تظهر في المقدمة خلال 45 ثانية.")
 
     def _screenshot(self):
         return self._run(["exec-out", "screencap", "-p"], timeout=20)
@@ -278,6 +298,11 @@ class ADBStrategyRuntime:
 
     def run(self, cancelled: Callable[[], bool] = lambda: False,
             on_decision: Callable[[str], None] = lambda message: None) -> str:
+        try:
+            on_decision("التحقق من تشغيل اللعبة...")
+            self._launch_game_if_needed(cancelled)
+        except Exception as exc:
+            return "تعذر بدء محرك الأتمتة: " + str(exc)
         for step in range(self.max_steps):
             if cancelled():
                 return "أوقف المستخدم محرك الأتمتة."
