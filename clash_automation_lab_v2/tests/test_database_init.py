@@ -34,13 +34,18 @@ class DatabaseInitializationTests(unittest.TestCase):
     def test_legacy_database_gets_missing_profiles_and_params(self):
         with tempfile.TemporaryDirectory() as temp:
             database = Path(temp) / "profiles.db"
-            with sqlite3.connect(database) as con:
-                con.execute(
+            setup = sqlite3.connect(database)
+            try:
+                setup.execute(
                     "CREATE TABLE tasks (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
                     "profile_id INTEGER, serial TEXT DEFAULT '', action TEXT NOT NULL, "
                     "status TEXT DEFAULT 'جاهزة', result TEXT DEFAULT '', "
                     "created TEXT DEFAULT CURRENT_TIMESTAMP)"
                 )
+                setup.commit()
+            finally:
+                setup.close()
+
             with patch.object(task_page, "DB", database):
                 con = task_page.db()
                 try:
@@ -64,12 +69,15 @@ class DatabaseInitializationTests(unittest.TestCase):
                 for _ in range(3):
                     con = task_page.db()
                     con.close()
-                with sqlite3.connect(database) as con:
-                    count = con.execute(
+                verify = sqlite3.connect(database)
+                try:
+                    count = verify.execute(
                         "SELECT COUNT(*) FROM sqlite_master "
                         "WHERE type='table' AND name='profiles'"
                     ).fetchone()[0]
                     self.assertEqual(count, 1)
+                finally:
+                    verify.close()
 
 
 if __name__ == "__main__":
