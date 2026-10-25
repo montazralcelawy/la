@@ -9,6 +9,7 @@ import time
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
+from strategy_setup_dialog import StrategySetupDialog
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 DB = ROOT / 'profiles.db'
@@ -402,6 +403,9 @@ class TasksPage(QWidget):
         strategy_config_layout.setContentsMargins(0, 0, 0, 0)
         strategy_config_layout.addWidget(self.strategy_config_path, 1)
         strategy_config_layout.addWidget(self.strategy_config_browse)
+        self.strategy_setup_button = QPushButton('إنشاء إعدادات موجهة…')
+        self.strategy_setup_button.clicked.connect(self.create_strategy_config)
+        strategy_config_layout.addWidget(self.strategy_setup_button)
         template_row = QWidget()
         template_layout = QHBoxLayout(template_row)
         template_layout.setContentsMargins(0, 0, 0, 0)
@@ -571,6 +575,19 @@ class TasksPage(QWidget):
             'JSON (*.json);;كل الملفات (*.*)')
         if path:
             self.strategy_config_path.setText(path)
+
+    def create_strategy_config(self):
+        dialog = StrategySetupDialog(self)
+        if dialog.exec() == QDialog.Accepted and getattr(dialog, 'saved_path', ''):
+            self.strategy_config_path.setText(dialog.saved_path)
+            self.action.setCurrentIndex(self.action.findData('strategy_run'))
+            self.name.setText('دورة الهجوم والاستراتيجية')
+            self.window.log('تم إنشاء ملف إعدادات الاستراتيجية: ' + dialog.saved_path)
+            QMessageBox.information(
+                self, 'تم إنشاء الإعدادات',
+                'تم حفظ ملف الإعدادات وربطه بالمهمة. قبل التشغيل، تأكد من أن القوالب المختارة '
+                'مأخوذة من لقطات الشاشة الصحيحة. قراءة الموارد ونقاط النشر تحتاج إلى ضبط واختبار منفصل.'
+            )
 
     def browse_template(self):
         path, _ = QFileDialog.getOpenFileName(
