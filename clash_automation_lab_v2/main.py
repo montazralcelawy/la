@@ -193,8 +193,11 @@ class Window(QMainWindow):
   fl.addWidget(QLabel('تسلسل فتح اللعبة: فتح التطبيق ← انتظار 10 ثوانٍ ← التقاط لقطة شاشة.'))
   fl.addWidget(QLabel('تسلسل فحص الاتصال: اختبار اتصال ADB ← التقاط لقطة شاشة.'))
   l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
-  self.refresh_script_devices()
+  self.script_device.addItem('اضغط تحديث الأجهزة','')
  def refresh_script_devices(self):
+  if not self.adb():
+   QMessageBox.warning(self,'ADB غير موجود','حدد مسار adb.exe من إعدادات التطبيق أو ثبّت Android Platform Tools.')
+   return
   self.list_devices()
   output=self.runadb(['devices'])
   if output is None:return
