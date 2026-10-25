@@ -1,4 +1,4 @@
-import sys, sqlite3, subprocess, shutil
+import sys, sqlite3, subprocess, shutil, json
 from task_page import TasksPage
 from bot_config_page import BotConfigPage
 from pathlib import Path
@@ -41,7 +41,7 @@ class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
   self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.task_page = TasksPage(self); self.pages.addWidget(self.task_page); self.make_settings(); self.make_logs()
-  self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
+  self.make_scripts_page()
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0']); self.pages.addWidget(BotConfigPage(self))
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
   brand=QLabel('🛡  Clash Automation Lab'); brand.setStyleSheet('font-size:16px;font-weight:700;padding:8px 3px 16px 3px'); brand.setAlignment(Qt.AlignCenter); sl.addWidget(brand)
@@ -175,6 +175,70 @@ class Window(QMainWindow):
   return True
  def test_saved_adb(self):
   if self.save_app_settings():self.check_adb()
+ def make_scripts_page(self):
+  p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title('قوالب تسلسلات المهام'))
+  f,fl=self.panel('إنشاء تسلسل جاهز')
+  fl.addWidget(QLabel('هذه القوالب تنشئ مهاماً عادية في قائمة المهام؛ راجع الإحداثيات والإعدادات قبل تشغيل أي تسلسل.'))
+  form=QFormLayout()
+  self.script_device=QComboBox()
+  self.script_package=QLineEdit('com.supercell.clashofclans')
+  form.addRow('جهاز ADB:',self.script_device)
+  form.addRow('حزمة التطبيق:',self.script_package)
+  fl.addLayout(form)
+  row=QHBoxLayout()
+  refresh=QPushButton('⟳ تحديث الأجهزة'); refresh.clicked.connect(self.refresh_script_devices); row.addWidget(refresh)
+  launch=QPushButton('إضافة تسلسل فتح اللعبة'); launch.setObjectName('primary'); launch.clicked.connect(self.add_launch_script); row.addWidget(launch)
+  check=QPushButton('إضافة تسلسل فحص الاتصال'); check.clicked.connect(self.add_check_script); row.addWidget(check)
+  fl.addLayout(row)
+  fl.addWidget(QLabel('تسلسل فتح اللعبة: فتح التطبيق ← انتظار 10 ثوانٍ ← التقاط لقطة شاشة.'))
+  fl.addWidget(QLabel('تسلسل فحص الاتصال: اختبار اتصال ADB ← التقاط لقطة شاشة.'))
+  l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
+  self.refresh_script_devices()
+ def refresh_script_devices(self):
+  self.list_devices()
+  output=self.runadb(['devices'])
+  if output is None:return
+  current=self.script_device.currentData() if hasattr(self,'script_device') else None
+  self.script_device.clear()
+  devices=[line.split()[0] for line in output.splitlines()[1:] if len(line.split())>=2 and line.split()[1]=='device']
+  for serial in devices:self.script_device.addItem(serial,serial)
+  if not devices:self.script_device.addItem('لا توجد أجهزة متصلة','')
+  if current:
+   index=self.script_device.findData(current)
+   if index>=0:self.script_device.setCurrentIndex(index)
+ def add_script_tasks(self,steps):
+  serial=self.script_device.currentData() or ''
+  if not serial:
+   QMessageBox.warning(self,'الجهاز غير محدد','حدّث الأجهزة واختر جهازاً متصلاً قبل إضافة هذا التسلسل.')
+   return
+  con=sqlite3.connect(DB)
+  try:
+   for name,action,params in steps:
+    con.execute('INSERT INTO tasks(name,profile_id,serial,action,status,result,params) VALUES(?,NULL,?,?,?, ?,?)',
+                (name,serial,action,'جاهزة','',json.dumps(params,ensure_ascii=False)))
+   con.commit()
+  except Exception as exc:
+   con.rollback()
+   QMessageBox.warning(self,'تعذر إنشاء التسلسل',str(exc))
+   con.close()
+   return
+  con.close()
+  self.task_page.reload_tasks()
+  self.log('أُضيف تسلسل يتضمن '+str(len(steps))+' مهام جاهزة.')
+  self.switch(3)
+  QMessageBox.information(self,'تمت إضافة التسلسل','أُضيفت المهام إلى القائمة. راجع ترتيبها ثم اضغط «تشغيل كل الجاهزة».')
+ def add_launch_script(self):
+  package=self.script_package.text().strip() or 'com.supercell.clashofclans'
+  self.add_script_tasks([
+   ('قالب: فتح التطبيق','launch_game',{'package':package}),
+   ('قالب: انتظار تحميل التطبيق','wait',{'duration_ms':10000}),
+   ('قالب: لقطة بعد الفتح','screenshot',{})
+  ])
+ def add_check_script(self):
+  self.add_script_tasks([
+   ('قالب: فحص اتصال ADB','check',{}),
+   ('قالب: لقطة شاشة','screenshot',{})
+  ])
  def make_text_page(self,heading,lines):
   p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title(heading)); f,fl=self.panel(heading)
   for s in lines: fl.addWidget(QLabel(s))
