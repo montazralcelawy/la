@@ -96,7 +96,7 @@ class TaskWorker(QThread):
     def run(self):
         status, result = 'فشلت', ''
         try:
-            if self.action in ('find_template', 'tap_if_template'):
+            if self.action in ('find_template', 'tap_if_template', 'wait_for_template'):
                 if not self.adb_path or not self.serial:
                     raise RuntimeError('يلزم تحديد ADB والجهاز لاستخدام التعرف على الصور.')
                 template_path = str(self.params.get('template_path', '')).strip()
@@ -116,33 +116,53 @@ class TaskWorker(QThread):
                                          if 'mCurrentFocus' in line or 'mFocusedApp' in line)
                     if focus_probe.returncode != 0 or package not in focus:
                         raise RuntimeError('أُلغي اللمس لأن حزمة اللعبة المطلوبة ليست في المقدمة: ' + package)
-                capture = subprocess.run(
-                    [self.adb_path, '-s', self.serial, 'exec-out', 'screencap', '-p'],
-                    capture_output=True, timeout=20,
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-                if capture.returncode != 0:
-                    raise RuntimeError(capture.stderr.decode(errors='replace').strip() or 'فشل التقاط الشاشة عبر ADB.')
-                match = match_template_in_screenshot(capture.stdout, template_path, threshold)
-                percent = f"{match['confidence'] * 100:.1f}%"
-                if not match['found']:
-                    result = f"لم يظهر القالب بدرجة الثقة المطلوبة. أفضل تطابق: {percent}؛ المطلوب: {threshold * 100:.1f}%."
-                elif self.action == 'find_template':
-                    status = 'نجحت'
-                    result = f"تم العثور على القالب عند ({match['x']}, {match['y']}) بثقة {percent}."
-                else:
-                    self.process = subprocess.Popen(
-                        [self.adb_path, '-s', self.serial, 'shell', 'input', 'tap',
-                         str(match['x']), str(match['y'])],
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                is_wait = self.action == 'wait_for_template'
+                timeout_seconds = max(1, min(int(self.params.get('duration_ms', 30000)) / 1000, 300))
+                deadline = time.monotonic() + timeout_seconds
+                match = None
+                while not self.cancel_requested.is_set():
+                    capture = subprocess.run(
+                        [self.adb_path, '-s', self.serial, 'exec-out', 'screencap', '-p'],
+                        capture_output=True, timeout=20,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-                    stdout, stderr = self.process.communicate(timeout=15)
-                    if self.cancel_requested.is_set():
-                        status, result = 'أُلغيت', 'أُلغي اللمس بعد مطابقة القالب.'
-                    elif self.process.returncode != 0:
-                        result = stderr.decode(errors='replace').strip() or 'فشل إرسال اللمس إلى مركز القالب.'
+                    if capture.returncode != 0:
+                        raise RuntimeError(capture.stderr.decode(errors='replace').strip() or 'فشل التقاط الشاشة عبر ADB.')
+                    candidate = match_template_in_screenshot(capture.stdout, template_path, threshold)
+                    if candidate['found']:
+                        match = candidate
+                        break
+                    if not is_wait or time.monotonic() >= deadline:
+                        match = candidate
+                        break
+                    if self.cancel_requested.wait(min(0.5, max(0, deadline - time.monotonic()))):
+                        break
+                if self.cancel_requested.is_set():
+                    status, result = 'أُلغيت', 'أُلغيت عملية البحث البصري بطلب المستخدم.'
+                elif not match or not match['found']:
+                    percent = f"{match['confidence'] * 100:.1f}%" if match else 'غير متاح'
+                    if is_wait:
+                        result = f'انتهت مهلة انتظار القالب ({timeout_seconds:g} ثانية). أفضل تطابق: {percent}.'
                     else:
+                        result = f"لم يظهر القالب بدرجة الثقة المطلوبة. أفضل تطابق: {percent}؛ المطلوب: {threshold * 100:.1f}%."
+                else:
+                    percent = f"{match['confidence'] * 100:.1f}%"
+                    if self.action in ('find_template', 'wait_for_template'):
                         status = 'نجحت'
-                        result = f"عُثر على القالب بثقة {percent} ونُفذ اللمس عند ({match['x']}, {match['y']})."
+                        result = f"تم العثور على القالب عند ({match['x']}, {match['y']}) بثقة {percent}."
+                    else:
+                        self.process = subprocess.Popen(
+                            [self.adb_path, '-s', self.serial, 'shell', 'input', 'tap',
+                             str(match['x']), str(match['y'])],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                        stdout, stderr = self.process.communicate(timeout=15)
+                        if self.cancel_requested.is_set():
+                            status, result = 'أُلغيت', 'أُلغي اللمس بعد مطابقة القالب.'
+                        elif self.process.returncode != 0:
+                            result = stderr.decode(errors='replace').strip() or 'فشل إرسال اللمس إلى مركز القالب.'
+                        else:
+                            status = 'نجحت'
+                            result = f"عُثر على القالب بثقة {percent} ونُفذ اللمس عند ({match['x']}, {match['y']})."
             elif self.action == 'wait':
                 duration = max(0, min(int(self.params.get('duration_ms', 1000)), 3600000))
                 if self.cancel_requested.wait(duration / 1000):
@@ -335,6 +355,7 @@ class TasksPage(QWidget):
         self.action.addItem('انتظار ظهور اللعبة حتى انتهاء المهلة', 'wait_for_foreground_app')
         self.action.addItem('لمس وقائي (فقط إذا كانت اللعبة ظاهرة)', 'guarded_tap')
         self.action.addItem('البحث عن صورة قالب في الشاشة', 'find_template')
+        self.action.addItem('انتظار ظهور صورة قالب', 'wait_for_template')
         self.action.addItem('اللمس عند العثور على صورة قالب', 'tap_if_template')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
@@ -506,7 +527,7 @@ class TasksPage(QWidget):
         self.y.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
-        self.duration.setEnabled(action in ('swipe', 'wait', 'wait_for_foreground_app'))
+        self.duration.setEnabled(action in ('swipe', 'wait', 'wait_for_foreground_app', 'wait_for_template'))
         self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app', 'wait_for_foreground_app', 'guarded_tap'))
 
     def browse_template(self):
@@ -525,7 +546,7 @@ class TasksPage(QWidget):
         names = {
             'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
             'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر',
-            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'find_template': 'البحث عن قالب بصري', 'tap_if_template': 'لمس قالب بصري', 'screenshot': 'لقطة شاشة',
+            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'find_template': 'البحث عن قالب بصري', 'wait_for_template': 'انتظار قالب بصري', 'tap_if_template': 'لمس قالب بصري', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
