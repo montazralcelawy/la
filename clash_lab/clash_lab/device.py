@@ -69,7 +69,7 @@ class AndroidDevice:
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             raise DeviceError("فشل التقاط الشاشة عبر ADB") from exc
         if proc.returncode != 0 or not proc.stdout.startswith(b"\x89PNG"):
-            raise DeviceError((proc.stderr or b"تعذر التقاط الشاشة").decode("utf-8", "replace"))
+            raise DeviceError((proc.stderr or "تعذر التقاط الشاشة".encode("utf-8")).decode("utf-8", "replace"))
         return proc.stdout
 
     def tap(self, x: int, y: int) -> None:
