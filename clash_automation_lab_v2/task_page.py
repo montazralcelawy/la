@@ -96,7 +96,25 @@ class TaskWorker(QThread):
     def run(self):
         status, result = 'فشلت', ''
         try:
-            if self.action in ('find_template', 'tap_if_template', 'wait_for_template'):
+            if self.action == 'strategy_run':
+                if not self.adb_path or not self.serial:
+                    raise RuntimeError('يلزم تحديد ADB والجهاز لتشغيل محرك الاستراتيجية.')
+                config_path = str(self.params.get('config_path', '')).strip()
+                if not config_path:
+                    raise RuntimeError('اختر ملف إعدادات الرؤية JSON للمحرك.')
+                from strategy_runtime import ADBStrategyRuntime
+                runtime = ADBStrategyRuntime(
+                    self.adb_path, self.serial, config_path,
+                    package=str(self.params.get('package', 'com.supercell.clashofclans')),
+                    max_steps=int(self.params.get('max_steps', 500)))
+                result = runtime.run(cancelled=self.cancel_requested.is_set)
+                if self.cancel_requested.is_set() or result.startswith('أوقف المستخدم'):
+                    status, result = 'أُلغيت', result
+                elif result.startswith(('توقف المحرك', 'لم يتم التعرف', 'تعذر', 'بلغ المحرك حد', 'قراءة الموارد')):
+                    status = 'فشلت'
+                else:
+                    status = 'نجحت'
+            elif self.action in ('find_template', 'tap_if_template', 'wait_for_template'):
                 if not self.adb_path or not self.serial:
                     raise RuntimeError('يلزم تحديد ADB والجهاز لاستخدام التعرف على الصور.')
                 template_path = str(self.params.get('template_path', '')).strip()
@@ -357,6 +375,7 @@ class TasksPage(QWidget):
         self.action.addItem('البحث عن صورة قالب في الشاشة', 'find_template')
         self.action.addItem('انتظار ظهور صورة قالب', 'wait_for_template')
         self.action.addItem('اللمس عند العثور على صورة قالب', 'tap_if_template')
+        self.action.addItem('تشغيل محرك الاستراتيجية البصري', 'strategy_run')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
@@ -374,6 +393,15 @@ class TasksPage(QWidget):
         self.template_path.setPlaceholderText('مسار PNG/JPG لعنصر واجهة تريد البحث عنه')
         self.template_browse = QPushButton('اختيار صورة…')
         self.template_browse.clicked.connect(self.browse_template)
+        self.strategy_config_path = QLineEdit()
+        self.strategy_config_path.setPlaceholderText('ملف JSON يحدد قوالب الشاشات والأزرار والموارد')
+        self.strategy_config_browse = QPushButton('اختيار إعدادات…')
+        self.strategy_config_browse.clicked.connect(self.browse_strategy_config)
+        strategy_config_row = QWidget()
+        strategy_config_layout = QHBoxLayout(strategy_config_row)
+        strategy_config_layout.setContentsMargins(0, 0, 0, 0)
+        strategy_config_layout.addWidget(self.strategy_config_path, 1)
+        strategy_config_layout.addWidget(self.strategy_config_browse)
         template_row = QWidget()
         template_layout = QHBoxLayout(template_row)
         template_layout.setContentsMargins(0, 0, 0, 0)
@@ -391,6 +419,7 @@ class TasksPage(QWidget):
         form.addRow('المدة (مللي ثانية):', self.duration)
         form.addRow('حزمة التطبيق:', self.package)
         form.addRow('صورة القالب:', template_row)
+        form.addRow('إعدادات محرك الاستراتيجية:', strategy_config_row)
         form.addRow('حد الثقة (0.1–0.999):', self.confidence)
         self.action.currentIndexChanged.connect(self.action_changed)
         self.action_changed()
@@ -507,6 +536,8 @@ class TasksPage(QWidget):
                   'y2': self.y2.value(), 'duration_ms': self.duration.value(),
                   'package': self.package.text().strip() or 'com.supercell.clashofclans',
                   'template_path': self.template_path.text().strip(),
+                  'config_path': self.strategy_config_path.text().strip(),
+                  'max_steps': 500,
                   'confidence': self.confidence.value()}
         con = db()
         con.execute('INSERT INTO tasks(name,profile_id,serial,action,status,result,params) VALUES(?,?,?,?,?,?,?)',
@@ -521,15 +552,25 @@ class TasksPage(QWidget):
     def action_changed(self, *_):
         action = self.action.currentData()
         vision = action in ('find_template', 'tap_if_template')
+        strategy = action == 'strategy_run'
         self.template_path.setEnabled(vision)
         self.template_browse.setEnabled(vision)
+        self.strategy_config_path.setEnabled(strategy)
+        self.strategy_config_browse.setEnabled(strategy)
         self.confidence.setEnabled(vision)
         self.x.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.y.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
         self.duration.setEnabled(action in ('swipe', 'wait', 'wait_for_foreground_app', 'wait_for_template'))
-        self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app', 'wait_for_foreground_app', 'guarded_tap'))
+        self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app', 'wait_for_foreground_app', 'guarded_tap', 'strategy_run'))
+
+    def browse_strategy_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'اختر إعدادات محرك الاستراتيجية', str(Path.home()),
+            'JSON (*.json);;كل الملفات (*.*)')
+        if path:
+            self.strategy_config_path.setText(path)
 
     def browse_template(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -547,7 +588,7 @@ class TasksPage(QWidget):
         names = {
             'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
             'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر',
-            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'find_template': 'البحث عن قالب بصري', 'wait_for_template': 'انتظار قالب بصري', 'tap_if_template': 'لمس قالب بصري', 'screenshot': 'لقطة شاشة',
+            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'find_template': 'البحث عن قالب بصري', 'wait_for_template': 'انتظار قالب بصري', 'tap_if_template': 'لمس قالب بصري', 'strategy_run': 'محرك الاستراتيجية', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
