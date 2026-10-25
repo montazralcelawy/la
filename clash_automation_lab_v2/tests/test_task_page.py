@@ -75,6 +75,23 @@ class TaskWorkerTests(unittest.TestCase):
             ["dumpsys", "window", "windows"]
         )
 
+    def test_assert_foreground_app_passes_when_expected_package_is_visible(self):
+        result, popen = self.run_worker(
+            "assert_foreground_app", {"package": "com.example.game"},
+            stdout=b"  mCurrentFocus=Window{123 u0 com.example.game/.MainActivity}\\n"
+        )
+        self.assertEqual(result[1], "نجحت")
+        self.assertIn("تم التحقق", result[2])
+        self.assertEqual(popen.call_args.args[0][-3:], ["dumpsys", "window", "windows"])
+
+    def test_assert_foreground_app_fails_when_another_app_is_visible(self):
+        result, _ = self.run_worker(
+            "assert_foreground_app", {"package": "com.example.game"},
+            stdout=b"  mCurrentFocus=Window{123 u0 com.android.launcher/.MainActivity}\\n"
+        )
+        self.assertEqual(result[1], "فشلت")
+        self.assertIn("فشل شرط التطبيق", result[2])
+
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
         self.assertEqual(result[1], "نجحت")
