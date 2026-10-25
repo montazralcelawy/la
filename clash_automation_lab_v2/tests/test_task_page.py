@@ -141,6 +141,47 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertEqual(result[0][1], "نجحت")
         self.assertEqual(popen.call_args.args[0][-3:], ["tap", "120", "240"])
 
+    def test_template_search_reports_match_confidence(self):
+        from unittest.mock import Mock
+        result = []
+        worker = task_page.TaskWorker(11, "بحث قالب", "emulator-5554", "find_template", "adb",
+                                     {"template_path": "button.png", "confidence": 0.85})
+        worker.completed.connect(lambda *args: result.append(args))
+        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        match = {"found": True, "confidence": 0.94, "x": 321, "y": 222, "width": 800, "height": 600}
+        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match):
+            worker.run()
+        self.assertEqual(result[0][1], "نجحت")
+        self.assertIn("(321, 222)", result[0][2])
+        self.assertIn("94.0%", result[0][2])
+
+    def test_template_tap_does_not_tap_when_match_is_below_threshold(self):
+        from unittest.mock import Mock
+        result = []
+        worker = task_page.TaskWorker(12, "لمس قالب", "emulator-5554", "tap_if_template", "adb",
+                                     {"template_path": "button.png", "confidence": 0.9})
+        worker.completed.connect(lambda *args: result.append(args))
+        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        match = {"found": False, "confidence": 0.6, "x": 10, "y": 20, "width": 100, "height": 100}
+        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen") as popen:
+            worker.run()
+        self.assertEqual(result[0][1], "فشلت")
+        self.assertIn("لم يظهر القالب", result[0][2])
+        popen.assert_not_called()
+
+    def test_template_tap_clicks_match_center(self):
+        from unittest.mock import Mock
+        result = []
+        worker = task_page.TaskWorker(13, "لمس قالب", "emulator-5554", "tap_if_template", "adb",
+                                     {"template_path": "button.png", "confidence": 0.8})
+        worker.completed.connect(lambda *args: result.append(args))
+        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        match = {"found": True, "confidence": 0.95, "x": 321, "y": 222, "width": 100, "height": 100}
+        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen", return_value=FakeProcess()) as popen:
+            worker.run()
+        self.assertEqual(result[0][1], "نجحت")
+        self.assertEqual(popen.call_args.args[0][-2:], ["321", "222"])
+
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
         self.assertEqual(result[1], "نجحت")
