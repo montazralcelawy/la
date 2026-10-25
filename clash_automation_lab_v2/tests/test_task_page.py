@@ -80,6 +80,25 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertEqual(result[1], "نجحت")
         self.assertEqual(popen.call_args.args[0][-3:], ["tap", "123", "456"])
 
+    def test_swipe_uses_all_coordinates_and_duration(self):
+        result, popen = self.run_worker(
+            "swipe",
+            {"x": 10, "y": 20, "x2": 300, "y2": 400, "duration_ms": 750}
+        )
+        self.assertEqual(result[1], "نجحت")
+        self.assertEqual(
+            popen.call_args.args[0][-6:],
+            ["swipe", "10", "20", "300", "400", "750"]
+        )
+
+    def test_back_and_home_use_android_keyevents(self):
+        back_result, back_popen = self.run_worker("press_back")
+        home_result, home_popen = self.run_worker("press_home")
+        self.assertEqual(back_result[1], "نجحت")
+        self.assertEqual(home_result[1], "نجحت")
+        self.assertEqual(back_popen.call_args.args[0][-3:], ["keyevent", "4"][-3:])
+        self.assertEqual(home_popen.call_args.args[0][-3:], ["keyevent", "3"][-3:])
+
     def test_wait_does_not_require_adb(self):
         result, popen = self.run_worker("wait", {"duration_ms": 0}, serial="", adb_path=None)
         self.assertEqual(result[1], "نجحت")
