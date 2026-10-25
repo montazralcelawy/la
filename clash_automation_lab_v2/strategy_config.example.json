@@ -1,0 +1,24 @@
+{
+  "min_confidence": 0.88,
+  "post_action_delay_seconds": 0.8,
+  "tesseract_cmd": "",
+  "screen_templates": {},
+  "button_templates": {},
+  "status_templates": {},
+  "resource_regions": {},
+  "troop_slots": [],
+  "deployment_points": [],
+  "upgrade_candidates": [],
+  "policy": {
+    "min_gold": 100000,
+    "min_elixir": 100000,
+    "min_dark_elixir": 0,
+    "min_candidate_confidence": 0.88,
+    "attack_when_loot_low": true,
+    "collect_resources": true,
+    "upgrade_buildings": true,
+    "train_army": true,
+    "deploy_pattern": "two_sides",
+    "max_searches_per_cycle": 30
+  }
+}
