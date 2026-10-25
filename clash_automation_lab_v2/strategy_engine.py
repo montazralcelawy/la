@@ -138,9 +138,15 @@ class StrategyEngine:
             return Decision(ActionType.STOP, "لم يتم التعرف على شاشة اللعبة بثقة كافية؛ أوقفت المحرك لتجنب الضغط الخاطئ.")
 
         if observation.screen == Screen.BATTLE:
+            # The return-home control is itself strong visual evidence that the
+            # battle has ended, even if an optional status template was omitted.
+            return_target = self._button(observation, "return_home")
+            if observation.battle_ended is True and return_target:
+                return Decision(ActionType.END_BATTLE, "تم التأكد بصرياً من انتهاء المعركة وظهور زر العودة.", return_target)
+            if return_target:
+                return Decision(ActionType.END_BATTLE, "ظهر زر العودة بعد المعركة؛ العودة إلى القرية.", return_target)
             if observation.battle_ended is True:
-                target = self._button(observation, "return_home")
-                return Decision(ActionType.END_BATTLE, "تم التأكد من انتهاء المعركة؛ العودة متاحة.", target)
+                return Decision(ActionType.WAIT, "انتهت المعركة لكن زر العودة لم يُتعرف عليه بثقة؛ لا توجد نقرة آمنة.")
             if not observation.troop_slots or not observation.deployment_points:
                 return Decision(ActionType.WAIT, "المعركة ظاهرة لكن مواقع القوات أو نقاط النشر غير مؤكدة.")
             slots = [s for s in observation.troop_slots if s.confidence >= self.config.min_candidate_confidence]
