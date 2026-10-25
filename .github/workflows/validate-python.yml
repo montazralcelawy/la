@@ -1,0 +1,27 @@
+name: Validate Python
+
+on:
+  push:
+    paths:
+      - "clash_automation_lab_v2/**/*.py"
+      - "clash_automation_lab_v2/requirements.txt"
+      - ".github/workflows/validate-python.yml"
+  pull_request:
+    paths:
+      - "clash_automation_lab_v2/**/*.py"
+      - "clash_automation_lab_v2/requirements.txt"
+      - ".github/workflows/validate-python.yml"
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r clash_automation_lab_v2/requirements.txt
+      - name: Compile Python files
+        working-directory: clash_automation_lab_v2
+        run: python -m compileall -q .
