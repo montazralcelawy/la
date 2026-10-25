@@ -103,6 +103,19 @@ class TaskWorker(QThread):
                 if not template_path:
                     raise RuntimeError('حدد مسار صورة القالب المرجعية أولاً.')
                 threshold = max(0.1, min(float(self.params.get('confidence', 0.85)), 0.999))
+                if self.action == 'tap_if_template':
+                    package = str(self.params.get('package', 'com.supercell.clashofclans')).strip()
+                    if not package or any(ch.isspace() for ch in package):
+                        raise RuntimeError('اسم حزمة التطبيق غير صالح.')
+                    focus_probe = subprocess.run(
+                        [self.adb_path, '-s', self.serial, 'shell', 'dumpsys', 'window', 'windows'],
+                        capture_output=True, timeout=8,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    focus_info = (focus_probe.stdout + focus_probe.stderr).decode(errors='replace')
+                    focus = '\\n'.join(line.strip() for line in focus_info.splitlines()
+                                         if 'mCurrentFocus' in line or 'mFocusedApp' in line)
+                    if focus_probe.returncode != 0 or package not in focus:
+                        raise RuntimeError('أُلغي اللمس لأن حزمة اللعبة المطلوبة ليست في المقدمة: ' + package)
                 capture = subprocess.run(
                     [self.adb_path, '-s', self.serial, 'exec-out', 'screencap', '-p'],
                     capture_output=True, timeout=20,
