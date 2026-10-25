@@ -33,14 +33,14 @@ QPlainTextEdit{background:#0b1823;border:1px solid #304252;border-radius:6px;col
 QGroupBox{margin-top:10px;padding-top:10px;font-weight:600}
 '''
 def db():
- c=sqlite3.connect(DB); c.execute('''CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY,name TEXT UNIQUE NOT NULL,serial TEXT DEFAULT '',village TEXT DEFAULT '',task TEXT DEFAULT 'غير نشط',enabled INTEGER DEFAULT 1,notes TEXT DEFAULT '')'''); c.commit(); return c
+ c=sqlite3.connect(DB); c.execute('''CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY,name TEXT UNIQUE NOT NULL,serial TEXT DEFAULT '',village TEXT DEFAULT '',task TEXT DEFAULT 'غير نشط',enabled INTEGER DEFAULT 1,notes TEXT DEFAULT '')'''); c.execute('CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)'); c.commit(); return c
 class Card(QFrame):
  def __init__(self,title,value,note,color):
   super().__init__(); self.setObjectName('panel'); l=QVBoxLayout(self); self.value=QLabel(value); self.value.setObjectName('metric'); self.value.setStyleSheet(f'color:{color}'); l.addWidget(self.value); l.addWidget(QLabel(title)); n=QLabel(note); n.setObjectName('muted'); l.addWidget(n); l.setContentsMargins(14,12,14,12)
 class Window(QMainWindow):
  def __init__(self):
   super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
-  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.task_page = TasksPage(self); self.pages.addWidget(self.task_page); self.make_text_page('الإعدادات',['إعدادات الواجهة والاتصال ستُضاف لاحقاً.','لا تحفظ كلمات المرور أو رموز الدخول.']); self.make_logs()
+  self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.task_page = TasksPage(self); self.pages.addWidget(self.task_page); self.make_settings(); self.make_logs()
   self.make_text_page('السكربتات',['هذه الصفحة مخصصة لإدارة السكربتات مستقبلاً.','لا يتم تشغيل سكربتات خارجية في هذه النسخة.'])
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0']); self.pages.addWidget(BotConfigPage(self))
   side=QFrame(); side.setObjectName('panel'); side.setFixedWidth(248); sl=QVBoxLayout(side); sl.setContentsMargins(12,16,12,14); sl.setSpacing(7)
@@ -121,6 +121,41 @@ class Window(QMainWindow):
   launchbtn=QPushButton('▶ فتح اللعبة / التطبيق'); launchbtn.setObjectName('primary'); launchbtn.clicked.connect(self.launch_app); launchlayout.addWidget(launchbtn)
   launchlayout.addWidget(QLabel('هذه الوظيفة تفتح التطبيق المثبت فقط؛ لا تسجل الدخول ولا تنفذ أوامر اللعب.'))
   l.addWidget(f); l.addWidget(launchbox); self.adbout=QPlainTextEdit(); self.adbout.setReadOnly(True); self.adbout.setPlaceholderText('نتائج فحص ADB وتشغيل التطبيقات ستظهر هنا.'); l.addWidget(self.adbout,1); self.pages.addWidget(p)
+ def make_settings(self):
+  p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title('إعدادات التطبيق'))
+  f,fl=self.panel('إعدادات الاتصال')
+  form=QFormLayout()
+  self.adb_path_input=QLineEdit()
+  self.adb_path_input.setPlaceholderText('اتركه فارغاً لاكتشاف ADB تلقائياً')
+  c=db(); row=c.execute("SELECT value FROM app_settings WHERE key='adb_path'").fetchone(); c.close()
+  if row:self.adb_path_input.setText(row[0])
+  pathrow=QHBoxLayout(); pathrow.addWidget(self.adb_path_input,1)
+  browse=QPushButton('استعراض...'); browse.clicked.connect(self.browse_adb_path); pathrow.addWidget(browse)
+  form.addRow('مسار adb.exe:',pathrow)
+  fl.addLayout(form)
+  actions=QHBoxLayout()
+  save=QPushButton('حفظ الإعدادات'); save.setObjectName('primary'); save.clicked.connect(self.save_app_settings); actions.addWidget(save)
+  test=QPushButton('حفظ واختبار ADB'); test.clicked.connect(self.test_saved_adb); actions.addWidget(test)
+  fl.addLayout(actions)
+  fl.addWidget(QLabel('يمكن ترك المسار فارغاً إذا كان ADB موجوداً في PATH أو في أحد المسارات المعروفة.'))
+  warning=QLabel('لا تحفظ كلمات مرور أو رموز تسجيل الدخول هنا. إعدادات البوت لا تتحول تلقائياً إلى استراتيجية لعب مستقلة.')
+  warning.setObjectName('muted'); fl.addWidget(warning)
+  l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
+ def browse_adb_path(self):
+  path,_=QFileDialog.getOpenFileName(self,'اختر adb.exe',str(Path.home()),'ADB executable (adb.exe);;All files (*)')
+  if path:self.adb_path_input.setText(path)
+ def save_app_settings(self):
+  path=self.adb_path_input.text().strip()
+  if path and (not Path(path).is_file() or Path(path).name.lower()!='adb.exe'):
+   QMessageBox.warning(self,'مسار غير صحيح','اختر ملف adb.exe صالحاً أو اترك الحقل فارغاً للاكتشاف التلقائي.')
+   return False
+  c=db()
+  c.execute("INSERT INTO app_settings(key,value) VALUES('adb_path',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(path,))
+  c.commit(); c.close()
+  self.log('تم حفظ إعدادات التطبيق ومسار ADB.')
+  return True
+ def test_saved_adb(self):
+  if self.save_app_settings():self.check_adb()
  def make_text_page(self,heading,lines):
   p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title(heading)); f,fl=self.panel(heading)
   for s in lines: fl.addWidget(QLabel(s))
@@ -167,6 +202,9 @@ class Window(QMainWindow):
   if QMessageBox.question(self,'تأكيد','حذف ملف التعريف المحدد؟')!=QMessageBox.Yes:return
   c=db(); c.execute('DELETE FROM profiles WHERE id=?',(self.selected,)); c.commit(); c.close(); self.log('تم حذف ملف التعريف.'); self.clear_form(); self.refresh()
  def adb(self):
+  c=db(); row=c.execute("SELECT value FROM app_settings WHERE key='adb_path'").fetchone(); c.close()
+  configured=(row[0].strip() if row and row[0] else '')
+  if configured and Path(configured).is_file():return configured
   found=shutil.which('adb')
   if found:return found
   candidates=[Path(r'C:\\platform-tools\\adb.exe'),Path.home()/'AppData'/'Local'/'Android'/'Sdk'/'platform-tools'/'adb.exe']
