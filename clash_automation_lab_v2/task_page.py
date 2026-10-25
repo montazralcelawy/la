@@ -112,9 +112,9 @@ class TaskWorker(QThread):
                         capture_output=True, timeout=8,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                     focus_info = (focus_probe.stdout + focus_probe.stderr).decode(errors='replace')
-                    focus = '\\n'.join(line.strip() for line in focus_info.splitlines()
-                                         if 'mCurrentFocus' in line or 'mFocusedApp' in line)
-                    if focus_probe.returncode != 0 or package not in focus:
+                    focus_lines = [line.strip() for line in focus_info.splitlines()
+                                   if 'mCurrentFocus' in line or 'mFocusedApp' in line]
+                    if focus_probe.returncode != 0 or not any(package in line for line in focus_lines):
                         raise RuntimeError('أُلغي اللمس لأن حزمة اللعبة المطلوبة ليست في المقدمة: ' + package)
                 is_wait = self.action == 'wait_for_template'
                 timeout_seconds = max(1, min(int(self.params.get('duration_ms', 30000)) / 1000, 300))
