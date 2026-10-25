@@ -141,6 +141,23 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertEqual(result[0][1], "نجحت")
         self.assertEqual(popen.call_args.args[0][-3:], ["tap", "120", "240"])
 
+    def test_template_matcher_finds_reference_in_synthetic_screenshot(self):
+        import cv2
+        import numpy as np
+        rng = np.random.default_rng(42)
+        screenshot = rng.integers(0, 256, (60, 80, 3), dtype=np.uint8)
+        template = rng.integers(0, 256, (8, 9, 3), dtype=np.uint8)
+        screenshot[20:28, 25:34] = template
+        ok, encoded = cv2.imencode(".png", screenshot)
+        self.assertTrue(ok)
+        with tempfile.TemporaryDirectory() as temp:
+            template_path = Path(temp) / "template.png"
+            self.assertTrue(cv2.imwrite(str(template_path), template))
+            match = task_page.match_template_in_screenshot(encoded.tobytes(), str(template_path), 0.9)
+        self.assertTrue(match["found"])
+        self.assertEqual((match["x"], match["y"]), (29, 24))
+        self.assertGreater(match["confidence"], 0.99)
+
     def test_template_search_reports_match_confidence(self):
         from unittest.mock import Mock
         result = []
