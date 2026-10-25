@@ -190,8 +190,8 @@ class Window(QMainWindow):
   launch=QPushButton('إضافة تسلسل فتح اللعبة'); launch.setObjectName('primary'); launch.clicked.connect(self.add_launch_script); row.addWidget(launch)
   check=QPushButton('إضافة تسلسل فحص الاتصال'); check.clicked.connect(self.add_check_script); row.addWidget(check)
   fl.addLayout(row)
-  fl.addWidget(QLabel('تسلسل فتح اللعبة: فتح التطبيق ← انتظار 10 ثوانٍ ← التقاط لقطة شاشة.'))
-  fl.addWidget(QLabel('تسلسل فحص الاتصال: اختبار اتصال ADB ← التقاط لقطة شاشة.'))
+  fl.addWidget(QLabel('تسلسل فتح اللعبة: فحص ADB ← التحقق من تثبيت اللعبة ← فتح اللعبة ← انتظار 10 ثوانٍ ← فحص التطبيق الظاهر ← لقطة شاشة.'))
+  fl.addWidget(QLabel('تسلسل فحص الاتصال: اختبار ADB ← التحقق من تثبيت اللعبة ← معرفة التطبيق الظاهر ← لقطة شاشة.'))
   l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
   self.script_device.addItem('اضغط تحديث الأجهزة','')
  def refresh_script_devices(self):
@@ -233,14 +233,20 @@ class Window(QMainWindow):
  def add_launch_script(self):
   package=self.script_package.text().strip() or 'com.supercell.clashofclans'
   self.add_script_tasks([
-   ('قالب: فتح التطبيق','launch_game',{'package':package}),
-   ('قالب: انتظار تحميل التطبيق','wait',{'duration_ms':10000}),
-   ('قالب: لقطة بعد الفتح','screenshot',{})
+   ('تشخيص: فحص اتصال ADB','check',{}),
+   ('تشخيص: التحقق من تثبيت اللعبة','check_game_installed',{'package':package}),
+   ('تشغيل: فتح اللعبة','launch_game',{'package':package}),
+   ('تشغيل: انتظار تحميل اللعبة','wait',{'duration_ms':10000}),
+   ('تشخيص: فحص التطبيق الظاهر','current_app',{}),
+   ('تشخيص: لقطة بعد الفتح','screenshot',{})
   ])
  def add_check_script(self):
+  package=self.script_package.text().strip() or 'com.supercell.clashofclans'
   self.add_script_tasks([
-   ('قالب: فحص اتصال ADB','check',{}),
-   ('قالب: لقطة شاشة','screenshot',{})
+   ('تشخيص: فحص اتصال ADB','check',{}),
+   ('تشخيص: التحقق من تثبيت اللعبة','check_game_installed',{'package':package}),
+   ('تشخيص: معرفة التطبيق الظاهر','current_app',{}),
+   ('تشخيص: التقاط لقطة شاشة','screenshot',{})
   ])
  def make_text_page(self,heading,lines):
   p=QWidget(); l=QVBoxLayout(p); l.addWidget(self.title(heading)); f,fl=self.panel(heading)
