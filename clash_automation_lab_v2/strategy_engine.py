@@ -239,7 +239,9 @@ class VerifiedRunner:
                 self.stopped_reason = decision.reason
                 return self.stopped_reason
             if decision.action == ActionType.WAIT:
-                # The host is responsible for a cancellable delay before the next observation.
+                # Brief backoff prevents a hot loop while the UI is unchanged.
+                import time
+                time.sleep(0.5)
                 continue
             if not self.execute(decision):
                 self.stopped_reason = "فشل تنفيذ الإجراء؛ أوقف المحرك بأمان."
