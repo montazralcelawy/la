@@ -6,7 +6,7 @@ from datetime import datetime
 import subprocess
 import threading
 import time
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
 
