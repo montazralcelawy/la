@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 from clash_lab.attack_page import AttackPage
 from main import MainWindow, STYLE
@@ -14,12 +14,19 @@ def main() -> int:
     app.setStyleSheet(STYLE)
 
     window = MainWindow()
+
+    # Replace the existing placeholder tab instead of adding a duplicate tab.
+    tab_index = 1
+    old_page = window.tabs.widget(tab_index)
+    if old_page is not None:
+        window.tabs.removeTab(tab_index)
+        old_page.deleteLater()
+
     attack_page = AttackPage(window.selected_device, window)
-    index = window.tabs.indexOf(window.tabs.widget(1))
-    window.tabs.insertTab(index if index >= 0 else 1, attack_page, "جيش الهجوم")
+    window.tabs.insertTab(tab_index, attack_page, "جيش الهجوم")
     window.tabs.setCurrentWidget(attack_page)
     window.statusBar().showMessage(
-        "واجهة جيش الهجوم التجريبية مفعّلة؛ استخدم إحداثيات تم التحقق منها فقط."
+        "واجهة جيش الهجوم مفعّلة؛ استخدم إحداثيات تم التحقق منها فقط."
     )
     window.show()
     return app.exec()
