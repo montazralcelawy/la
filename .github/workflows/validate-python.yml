@@ -50,6 +50,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item README.md dist/ClashAutomationLab/README.md
+          Copy-Item strategy_config.example.json dist/ClashAutomationLab/strategy_config.example.json
           @(
             '@echo off',
             'cd /d "%~dp0"',
