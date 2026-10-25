@@ -47,6 +47,34 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertIn("تم إرسال أمر فتح التطبيق", result[2])
         self.assertEqual(popen.call_args.args[0][-5:], ["-p", "com.example.game", "-c", "android.intent.category.LAUNCHER", "1"])
 
+    def test_check_game_installed_reports_installed_package(self):
+        result, popen = self.run_worker(
+            "check_game_installed", {"package": "com.example.game"},
+            stdout=b"package:/data/app/com.example.game/base.apk"
+        )
+        self.assertEqual(result[1], "نجحت")
+        self.assertIn("التطبيق مثبت", result[2])
+        self.assertEqual(
+            popen.call_args.args[0][-3:],
+            ["pm", "path", "com.example.game"]
+        )
+
+    def test_check_game_installed_reports_missing_package(self):
+        result, _ = self.run_worker("check_game_installed", stdout=b"")
+        self.assertEqual(result[1], "فشلت")
+        self.assertIn("لم يتم العثور", result[2])
+
+    def test_current_app_reports_focused_window(self):
+        result, popen = self.run_worker(
+            "current_app", stdout=b"  mCurrentFocus=Window{123 u0 com.example.game/.MainActivity}\n"
+        )
+        self.assertEqual(result[1], "نجحت")
+        self.assertIn("com.example.game", result[2])
+        self.assertEqual(
+            popen.call_args.args[0][-3:],
+            ["dumpsys", "window", "windows"]
+        )
+
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
         self.assertEqual(result[1], "نجحت")
