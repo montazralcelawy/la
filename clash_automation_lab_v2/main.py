@@ -190,7 +190,7 @@ class Window(QMainWindow):
   launch=QPushButton('إضافة تسلسل فتح اللعبة'); launch.setObjectName('primary'); launch.clicked.connect(self.add_launch_script); row.addWidget(launch)
   check=QPushButton('إضافة تسلسل فحص الاتصال'); check.clicked.connect(self.add_check_script); row.addWidget(check)
   fl.addLayout(row)
-  fl.addWidget(QLabel('تسلسل فتح اللعبة: فحص ADB ← التحقق من تثبيت اللعبة ← فتح اللعبة ← انتظار 10 ثوانٍ ← فحص التطبيق الظاهر ← لقطة شاشة.'))
+  fl.addWidget(QLabel('تسلسل فتح اللعبة: فحص ADB ← التحقق من تثبيت اللعبة ← فتح اللعبة ← انتظار ظهور حزمة اللعبة حتى 45 ثانية ← لقطة شاشة. إذا لم تظهر اللعبة، تتوقف القائمة تلقائياً عند الفشل.'))
   fl.addWidget(QLabel('تسلسل فحص الاتصال: اختبار ADB ← التحقق من تثبيت اللعبة ← معرفة التطبيق الظاهر ← لقطة شاشة.'))
   l.addWidget(f); l.addStretch(); self.pages.addWidget(p)
   self.script_device.addItem('اضغط تحديث الأجهزة','')
@@ -236,8 +236,7 @@ class Window(QMainWindow):
    ('تشخيص: فحص اتصال ADB','check',{}),
    ('تشخيص: التحقق من تثبيت اللعبة','check_game_installed',{'package':package}),
    ('تشغيل: فتح اللعبة','launch_game',{'package':package}),
-   ('تشغيل: انتظار تحميل اللعبة','wait',{'duration_ms':10000}),
-   ('تحقق أمان: التأكد من ظهور اللعبة','assert_foreground_app',{'package':package}),
+   ('تشغيل: انتظار ظهور اللعبة فعلياً','wait_for_foreground_app',{'package':package,'duration_ms':45000}),
    ('تشخيص: لقطة بعد الفتح','screenshot',{})
   ])
  def add_check_script(self):
