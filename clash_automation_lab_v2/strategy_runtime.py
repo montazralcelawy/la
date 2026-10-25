@@ -50,6 +50,10 @@ class TemplateVision:
             raise RuntimeError("تعذر قراءة ملف إعدادات الرؤية JSON: " + str(exc)) from exc
         if not isinstance(self.config, dict):
             raise RuntimeError("ملف إعدادات الرؤية يجب أن يحتوي كائن JSON.")
+        if not self.config.get("screen_templates"):
+            raise RuntimeError("إعدادات الرؤية فارغة: أضف صورة قالب واحدة على الأقل لكل شاشة تريد تشغيلها داخل screen_templates.")
+        if not self.config.get("button_templates"):
+            raise RuntimeError("إعدادات الرؤية لا تحتوي قوالب أزرار؛ أضف قوالب الأزرار داخل button_templates قبل التشغيل.")
         self.base = self.config_path.parent
         self.threshold = float(self.config.get("min_confidence", 0.88))
         self.threshold = max(0.5, min(self.threshold, 0.999))
