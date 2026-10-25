@@ -192,7 +192,7 @@ class StrategyEngine:
                 if target:
                     return Decision(ActionType.TRAIN_ARMY, "معسكر الجيش غير ممتلئ؛ فتح التدريب.", target)
             enough = self._has_enough_loot(observation)
-            if self.config.attack_when_loot_low and observation.army_ready is True and enough is not None:
+            if self.config.attack_when_loot_low and observation.army_ready is True and enough is False:
                 target = self._button(observation, "attack_menu")
                 if target:
                     return Decision(ActionType.OPEN_ATTACK, "الجيش جاهز؛ فتح الهجوم للبحث عن موارد.", target)
