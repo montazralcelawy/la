@@ -92,6 +92,55 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertEqual(result[1], "فشلت")
         self.assertIn("فشل شرط التطبيق", result[2])
 
+    def test_wait_for_foreground_app_succeeds_when_package_appears(self):
+        from unittest.mock import Mock
+        probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.example.game/.MainActivity}",
+                     stderr=b"")
+        result = []
+        worker = task_page.TaskWorker(
+            8, "انتظار اللعبة", "emulator-5554", "wait_for_foreground_app", "adb",
+            {"package": "com.example.game", "duration_ms": 1000}
+        )
+        worker.completed.connect(lambda *args: result.append(args))
+        with patch.object(task_page.subprocess, "run", return_value=probe) as run:
+            worker.run()
+        self.assertEqual(result[0][1], "نجحت")
+        self.assertIn("ظهر التطبيق", result[0][2])
+        self.assertEqual(run.call_count, 1)
+
+    def test_guarded_tap_does_not_tap_when_game_is_not_foreground(self):
+        from unittest.mock import Mock
+        probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.android.launcher/.MainActivity}",
+                     stderr=b"")
+        result = []
+        worker = task_page.TaskWorker(
+            9, "لمس وقائي", "emulator-5554", "guarded_tap", "adb",
+            {"package": "com.example.game", "x": 120, "y": 240}
+        )
+        worker.completed.connect(lambda *args: result.append(args))
+        with patch.object(task_page.subprocess, "run", return_value=probe), \
+             patch.object(task_page.subprocess, "Popen") as popen:
+            worker.run()
+        self.assertEqual(result[0][1], "فشلت")
+        self.assertIn("أُلغي اللمس الوقائي", result[0][2])
+        popen.assert_not_called()
+
+    def test_guarded_tap_runs_only_when_expected_package_is_foreground(self):
+        from unittest.mock import Mock
+        probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.example.game/.MainActivity}",
+                     stderr=b"")
+        result = []
+        worker = task_page.TaskWorker(
+            10, "لمس وقائي", "emulator-5554", "guarded_tap", "adb",
+            {"package": "com.example.game", "x": 120, "y": 240}
+        )
+        worker.completed.connect(lambda *args: result.append(args))
+        with patch.object(task_page.subprocess, "run", return_value=probe), \
+             patch.object(task_page.subprocess, "Popen", return_value=FakeProcess()) as popen:
+            worker.run()
+        self.assertEqual(result[0][1], "نجحت")
+        self.assertEqual(popen.call_args.args[0][-3:], ["tap", "120", "240"])
+
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
         self.assertEqual(result[1], "نجحت")
