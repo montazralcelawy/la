@@ -15,6 +15,15 @@ DB = ROOT / 'profiles.db'
 
 def db():
     con = sqlite3.connect(DB)
+    # Initialize every table needed by the task page. Older packaged databases
+    # may contain tasks but not profiles, so this must be safe on every launch.
+    con.execute("""CREATE TABLE IF NOT EXISTS profiles(
+        id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+        serial TEXT DEFAULT '', village TEXT DEFAULT '',
+        task TEXT DEFAULT 'غير نشط', enabled INTEGER DEFAULT 1,
+        notes TEXT DEFAULT '')""")
+    con.execute("""CREATE TABLE IF NOT EXISTS app_settings(
+        key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
     con.execute("""CREATE TABLE IF NOT EXISTS tasks(
         id INTEGER PRIMARY KEY, name TEXT NOT NULL, profile_id INTEGER,
         serial TEXT DEFAULT '', action TEXT NOT NULL,
