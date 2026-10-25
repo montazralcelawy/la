@@ -178,9 +178,10 @@ class TaskWorkerTests(unittest.TestCase):
         worker = task_page.TaskWorker(12, "لمس قالب", "emulator-5554", "tap_if_template", "adb",
                                      {"template_path": "button.png", "confidence": 0.9})
         worker.completed.connect(lambda *args: result.append(args))
-        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        focus_probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.supercell.clashofclans/.MainActivity}", stderr=b"")
+        screenshot_probe = Mock(returncode=0, stdout=b"png", stderr=b"")
         match = {"found": False, "confidence": 0.6, "x": 10, "y": 20, "width": 100, "height": 100}
-        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen") as popen:
+        with patch.object(task_page.subprocess, "run", side_effect=[focus_probe, screenshot_probe]), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen") as popen:
             worker.run()
         self.assertEqual(result[0][1], "فشلت")
         self.assertIn("لم يظهر القالب", result[0][2])
@@ -192,12 +193,27 @@ class TaskWorkerTests(unittest.TestCase):
         worker = task_page.TaskWorker(13, "لمس قالب", "emulator-5554", "tap_if_template", "adb",
                                      {"template_path": "button.png", "confidence": 0.8})
         worker.completed.connect(lambda *args: result.append(args))
-        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        focus_probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.supercell.clashofclans/.MainActivity}", stderr=b"")
+        screenshot_probe = Mock(returncode=0, stdout=b"png", stderr=b"")
         match = {"found": True, "confidence": 0.95, "x": 321, "y": 222, "width": 100, "height": 100}
-        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen", return_value=FakeProcess()) as popen:
+        with patch.object(task_page.subprocess, "run", side_effect=[focus_probe, screenshot_probe]), patch.object(task_page, "match_template_in_screenshot", return_value=match), patch.object(task_page.subprocess, "Popen", return_value=FakeProcess()) as popen:
             worker.run()
         self.assertEqual(result[0][1], "نجحت")
         self.assertEqual(popen.call_args.args[0][-2:], ["321", "222"])
+
+    def test_template_tap_refuses_to_run_outside_game(self):
+        from unittest.mock import Mock
+        result = []
+        worker = task_page.TaskWorker(14, "لمس قالب", "emulator-5554", "tap_if_template", "adb",
+                                     {"template_path": "button.png", "confidence": 0.8})
+        worker.completed.connect(lambda *args: result.append(args))
+        focus_probe = Mock(returncode=0, stdout=b"mCurrentFocus=Window{1 u0 com.android.launcher/.MainActivity}", stderr=b"")
+        with patch.object(task_page.subprocess, "run", return_value=focus_probe), patch.object(task_page.subprocess, "Popen") as popen, patch.object(task_page, "match_template_in_screenshot") as matcher:
+            worker.run()
+        self.assertEqual(result[0][1], "فشلت")
+        self.assertIn("ليست في المقدمة", result[0][2])
+        popen.assert_not_called()
+        matcher.assert_not_called()
 
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
