@@ -237,7 +237,7 @@ class Window(QMainWindow):
    ('تشخيص: التحقق من تثبيت اللعبة','check_game_installed',{'package':package}),
    ('تشغيل: فتح اللعبة','launch_game',{'package':package}),
    ('تشغيل: انتظار تحميل اللعبة','wait',{'duration_ms':10000}),
-   ('تشخيص: فحص التطبيق الظاهر','current_app',{}),
+   ('تحقق أمان: التأكد من ظهور اللعبة','assert_foreground_app',{'package':package}),
    ('تشخيص: لقطة بعد الفتح','screenshot',{})
   ])
  def add_check_script(self):
