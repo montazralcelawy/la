@@ -49,7 +49,7 @@ class Window(QMainWindow):
    b=QPushButton(label); b.setObjectName('nav'); b.setCheckable(True); b.setMinimumHeight(42); b.clicked.connect(lambda _,n=i:self.switch(n)); sl.addWidget(b); self.navs.append((b,i))
   sl.addStretch()
   status=QFrame(); status.setObjectName('panel'); st=QVBoxLayout(status); st.setContentsMargins(12,12,12,12)
-  st.addWidget(QLabel('●  الحالة العامة')); self.navstatus=QLabel('كل الأنظمة تعمل'); self.navstatus.setStyleSheet('color:#50cf68;font-size:18px;font-weight:bold'); self.navstatus.setAlignment(Qt.AlignCenter); st.addWidget(self.navstatus)
+  st.addWidget(QLabel('●  الحالة العامة')); self.navstatus=QLabel('الواجهة تعمل'); self.navstatus.setStyleSheet('color:#50cf68;font-size:18px;font-weight:bold'); self.navstatus.setAlignment(Qt.AlignCenter); st.addWidget(self.navstatus)
   shield=QLabel('🛡  ✓'); shield.setStyleSheet('color:#50cf68;font-size:38px;padding:10px'); shield.setAlignment(Qt.AlignCenter); st.addWidget(shield)
   st.addWidget(QLabel('الإصدار: 1.0.0'))
   updates=QPushButton('التحقق من التحديثات'); updates.clicked.connect(lambda:self.log('التحقق من التحديثات غير متاح دون إعداد خدمة تحديث.')); st.addWidget(updates)
