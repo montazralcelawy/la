@@ -50,7 +50,7 @@ class TaskWorkerTests(unittest.TestCase):
     def test_tap_uses_saved_coordinates(self):
         result, popen = self.run_worker("tap", {"x": 123, "y": 456})
         self.assertEqual(result[1], "نجحت")
-        self.assertEqual(popen.call_args.args[0][-4:], ["tap", "123", "456"])
+        self.assertEqual(popen.call_args.args[0][-3:], ["tap", "123", "456"])
 
     def test_wait_does_not_require_adb(self):
         result, popen = self.run_worker("wait", {"duration_ms": 0}, serial="", adb_path=None)
