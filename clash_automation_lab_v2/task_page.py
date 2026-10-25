@@ -74,13 +74,55 @@ class TaskWorker(QThread):
                     status, result = 'أُلغيت', 'أُوقف الانتظار بطلب المستخدم.'
                 else:
                     status, result = 'نجحت', f'انتهى الانتظار لمدة {duration} مللي ثانية.'
+            elif self.action == 'wait_for_foreground_app':
+                if not self.adb_path or not self.serial:
+                    raise RuntimeError('يلزم تحديد ADB والجهاز للتحقق من التطبيق الظاهر.')
+                package = str(self.params.get('package', 'com.supercell.clashofclans')).strip()
+                if not package or any(ch.isspace() for ch in package):
+                    raise RuntimeError('اسم حزمة التطبيق غير صالح.')
+                timeout_seconds = max(1, min(int(self.params.get('duration_ms', 45000)) / 1000, 300))
+                deadline = time.monotonic() + timeout_seconds
+                found = False
+                while time.monotonic() < deadline and not self.cancel_requested.is_set():
+                    probe = subprocess.run(
+                        [self.adb_path, '-s', self.serial, 'shell', 'dumpsys', 'window', 'windows'],
+                        capture_output=True, timeout=8,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    info = (probe.stdout + probe.stderr).decode(errors='replace')
+                    focus = '\\n'.join(line.strip() for line in info.splitlines()
+                                       if 'mCurrentFocus' in line or 'mFocusedApp' in line)
+                    if probe.returncode == 0 and package in focus:
+                        found = True
+                        break
+                    self.cancel_requested.wait(min(1.0, max(0.0, deadline - time.monotonic())))
+                if self.cancel_requested.is_set():
+                    status, result = 'أُلغيت', 'أُلغي انتظار ظهور التطبيق.'
+                elif found:
+                    status, result = 'نجحت', 'ظهر التطبيق المطلوب في المقدمة: ' + package
+                else:
+                    result = f'لم يظهر التطبيق {package} خلال {timeout_seconds:g} ثانية.'
             else:
                 if not self.adb_path:
                     raise RuntimeError('لم يتم العثور على ADB. تحقق من Android Platform Tools.')
                 if not self.serial:
                     raise RuntimeError('لم يتم تحديد جهاز ADB لهذه المهمة.')
                 args = [self.adb_path, '-s', self.serial]
-                if self.action == 'check':
+                if self.action == 'guarded_tap':
+                    package = str(self.params.get('package', 'com.supercell.clashofclans')).strip()
+                    if not package or any(ch.isspace() for ch in package):
+                        raise RuntimeError('اسم حزمة التطبيق غير صالح.')
+                    probe = subprocess.run(
+                        args + ['shell', 'dumpsys', 'window', 'windows'],
+                        capture_output=True, timeout=8,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    info = (probe.stdout + probe.stderr).decode(errors='replace')
+                    focus = '\\n'.join(line.strip() for line in info.splitlines()
+                                       if 'mCurrentFocus' in line or 'mFocusedApp' in line)
+                    if probe.returncode != 0 or package not in focus:
+                        raise RuntimeError('أُلغي اللمس الوقائي لأن اللعبة المطلوبة ليست ظاهرة في المقدمة: ' + package)
+                    args += ['shell', 'input', 'tap', str(int(self.params.get('x', 0))),
+                             str(int(self.params.get('y', 0)))]
+                elif self.action == 'check':
                     args += ['get-state']
                 elif self.action == 'launch_game':
                     args += ['shell', 'monkey', '-p', self.params.get('package', 'com.supercell.clashofclans'),
@@ -215,6 +257,8 @@ class TasksPage(QWidget):
         self.action.addItem('التحقق من تثبيت اللعبة', 'check_game_installed')
         self.action.addItem('معرفة التطبيق الظاهر حالياً', 'current_app')
         self.action.addItem('التحقق من أن اللعبة ظاهرة قبل المتابعة', 'assert_foreground_app')
+        self.action.addItem('انتظار ظهور اللعبة حتى انتهاء المهلة', 'wait_for_foreground_app')
+        self.action.addItem('لمس وقائي (فقط إذا كانت اللعبة ظاهرة)', 'guarded_tap')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
@@ -274,7 +318,7 @@ class TasksPage(QWidget):
         self.stop_queue_on_failure.setChecked(True)
         self.stop_queue_on_failure.setToolTip('عند فشل خطوة، لن تُنفذ الخطوات التالية تلقائياً ما لم تُلغِ هذا الخيار.')
         layout.addWidget(self.stop_queue_on_failure)
-        note = QLabel('المهام المدعومة: فحص ADB، التحقق من تثبيت التطبيق، فحص التطبيق الظاهر أو اشتراط ظهوره، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر.')
+        note = QLabel('المهام المدعومة: فحص ADB، التحقق من تثبيت التطبيق، انتظار ظهوره، لمس وقائي مشروط بظهور اللعبة، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر.')
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
@@ -359,12 +403,12 @@ class TasksPage(QWidget):
 
     def action_changed(self, *_):
         action = self.action.currentData()
-        self.x.setEnabled(action in ('tap', 'swipe'))
-        self.y.setEnabled(action in ('tap', 'swipe'))
+        self.x.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
+        self.y.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
-        self.duration.setEnabled(action in ('swipe', 'wait'))
-        self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app'))
+        self.duration.setEnabled(action in ('swipe', 'wait', 'wait_for_foreground_app'))
+        self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app', 'wait_for_foreground_app', 'guarded_tap'))
 
     def reload_tasks(self):
         con = db()
@@ -374,7 +418,8 @@ class TasksPage(QWidget):
         self.table.setRowCount(len(rows))
         names = {
             'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
-            'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر', 'screenshot': 'لقطة شاشة',
+            'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر',
+            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
