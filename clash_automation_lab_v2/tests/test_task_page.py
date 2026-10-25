@@ -63,6 +63,18 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertIn("ADB", result[2])
         popen.assert_not_called()
 
+    def test_latest_screenshot_path_returns_none_when_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertIsNone(task_page.latest_screenshot_path(temp))
+
+    def test_latest_screenshot_path_finds_png(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / "screenshots"
+            folder.mkdir()
+            screenshot = folder / "emulator-5554_test.png"
+            screenshot.write_bytes(b"png")
+            self.assertEqual(task_page.latest_screenshot_path(temp), screenshot)
+
     def test_screenshot_saves_png(self):
         png = bytes([137, 80, 78, 71, 13, 10, 26, 10]) + b"test"
         with tempfile.TemporaryDirectory() as temp:
