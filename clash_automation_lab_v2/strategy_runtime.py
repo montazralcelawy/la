@@ -279,11 +279,20 @@ class ADBStrategyRuntime:
             return False
         if decision.action == ActionType.DEPLOY:
             obs = self.last_observation
-            if not obs or not obs.troop_slots or not obs.deployment_points:
+            if not obs or not obs.troop_slots:
                 return False
-            # Rotate through detected troop slots and configured perimeter points.
-            slot = obs.troop_slots[self._deploy_index % len(obs.troop_slots)]
-            point = obs.deployment_points[self._deploy_index % len(obs.deployment_points)]
+            # Respect the strategy engine's selected pattern (for example, two
+            # sides) rather than silently cycling through every configured point.
+            points = tuple(decision.points) or tuple(obs.deployment_points)
+            if not points:
+                return False
+            slots = [slot for slot in obs.troop_slots
+                     if slot.confidence >= self.engine.config.min_candidate_confidence]
+            if not slots:
+                return False
+            slot = slots[self._deploy_index % len(slots)]
+            point = points[self._deploy_index % len(points)]
+            self._ensure_game_foreground()
             self._tap(slot.x, slot.y)
             if cancelled():
                 return False
