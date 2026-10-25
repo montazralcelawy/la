@@ -58,7 +58,7 @@ python main.py
 
 ## الاختبارات وحزمة Windows
 
-- يوجد اختبار آلي لمحرك المهام في `tests/test_task_page.py` يغطي فحص اتصال ADB، فتح التطبيق، اللمس بالإحداثيات، الانتظار دون ADB، معالجة غياب ADB، وحفظ لقطة PNG.
+- يوجد اختبار آلي لمحرك المهام في `tests/test_task_page.py` يغطي فحص اتصال ADB، فتح التطبيق، التحقق من تثبيت الحزمة، قراءة النافذة الأمامية، اللمس والسحب، أزرار الرجوع والرئيسية، الانتظار دون ADB، معالجة غياب ADB، واكتشاف/حفظ لقطة PNG.
 - لتشغيل الاختبارات يدوياً من هذا المجلد: `python -m unittest discover -s tests -v`.
 - عند دفع تحديث للمستودع، يحاول GitHub Actions فحص تركيب ملفات Python وتشغيل الاختبارات وبناء نسخة Windows محمولة ثم نشرها كـ artifact باسم `ClashAutomationLab-Windows`.
 - لتنزيل حزمة Windows بعد نجاح التشغيل، افتح تبويب Actions في المستودع، واختر آخر تشغيل ناجح لـ `Validate and package Windows app`، ثم نزّل artifact `ClashAutomationLab-Windows`. هذه الحزمة تتضمن EXE وملفات التشغيل اللازمة؛ لا تنقل EXE وحده خارج المجلد.
