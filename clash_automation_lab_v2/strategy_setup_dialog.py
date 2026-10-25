@@ -61,9 +61,18 @@ class StrategySetupDialog(QDialog):
         self.points.setPlaceholderText("اتركها فارغة لحين تحديد نقاط آمنة على ساحة القتال")
         root.addWidget(self.points)
         root.addWidget(QLabel(
-            "ملاحظة: قراءة الموارد الآلية غير مفعّلة في هذا المعالج؛ لذلك لن يتخذ المحرك قرار تخطي الخصم "
-            "حتى تُضبط مناطق قراءة الذهب والإكسير لاحقاً. إذا لم يتعرّف على شاشة، فسيتوقف بأمان."
+            "مناطق قراءة الموارد اختيارية الآن، لكنها لازمة لاتخاذ قرار موثوق بشأن تخطي القرى. "
+            "أدخل x,y,w,h ككسور نسبية من أبعاد الشاشة بين 0 و1، وفق لقطة شاشتك."
         ))
+        self.gold_region = QLineEdit()
+        self.gold_region.setPlaceholderText("الذهب: x,y,w,h — مثال تنسيقي 0.80,0.03,0.12,0.05")
+        self.elixir_region = QLineEdit()
+        self.elixir_region.setPlaceholderText("الإكسير: x,y,w,h")
+        self.dark_region = QLineEdit()
+        self.dark_region.setPlaceholderText("الإكسير الداكن (اختياري): x,y,w,h")
+        root.addWidget(self.gold_region)
+        root.addWidget(self.elixir_region)
+        root.addWidget(self.dark_region)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.save_config)
         buttons.rejected.connect(self.reject)
@@ -115,6 +124,23 @@ class StrategySetupDialog(QDialog):
                 "اكتب النقاط بهذا الشكل: 0.25,0.70; 0.75,0.70"
             )
             return
+        resource_regions = {}
+        for key, edit in (("gold", self.gold_region), ("elixir", self.elixir_region),
+                          ("dark_elixir", self.dark_region)):
+            raw = edit.text().strip()
+            if not raw:
+                continue
+            try:
+                values = [float(part.strip()) for part in raw.split(",")]
+                if len(values) != 4 or any(value < 0 or value > 1 for value in values):
+                    raise ValueError("استخدم أربعة أرقام نسبية بين 0 و1.")
+            except ValueError:
+                QMessageBox.warning(
+                    self, "منطقة موارد غير صحيحة",
+                    "اكتب كل منطقة بالشكل x,y,w,h، بأربعة أرقام بين 0 و1."
+                )
+                return
+            resource_regions[key] = values
         config = {
             "min_confidence": 0.88,
             "post_action_delay_seconds": 0.8,
@@ -122,7 +148,7 @@ class StrategySetupDialog(QDialog):
             "screen_templates": screen_templates,
             "button_templates": button_templates,
             "status_templates": status_templates,
-            "resource_regions": {},
+            "resource_regions": resource_regions,
             "troop_slots": troop_slots,
             "deployment_points": points,
             "upgrade_candidates": [],
