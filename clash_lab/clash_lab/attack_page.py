@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QImage, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
     QPushButton, QPlainTextEdit, QSpinBox, QVBoxLayout, QWidget,
@@ -8,6 +9,67 @@ from PySide6.QtWidgets import (
 
 from .attack import AttackConfig, AttackRunner, TapStep
 from .device import AndroidDevice
+
+
+class ClickableScreenshot(QLabel):
+    """Display a device screenshot and report taps in original device pixels."""
+    point_selected = Signal(int, int)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._source_pixmap: QPixmap | None = None
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumSize(320, 220)
+        self.setText("اضغط «تحديث صورة اللعبة» لعرض الشاشة هنا")
+        self.setStyleSheet(
+            "background:#0b0e14;border:1px solid #334156;border-radius:8px;padding:6px"
+        )
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def set_screenshot(self, png: bytes) -> None:
+        image = QImage()
+        if not image.loadFromData(png, "PNG") or image.isNull():
+            raise ValueError("الصورة المستلمة من الجهاز ليست PNG صالحة.")
+        self._source_pixmap = QPixmap.fromImage(image)
+        self._refresh_scaled_pixmap()
+
+    def _refresh_scaled_pixmap(self) -> None:
+        if self._source_pixmap is None:
+            return
+        scaled = self._source_pixmap.scaled(
+            self.contentsRect().size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.setPixmap(scaled)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh_scaled_pixmap()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._source_pixmap is None or event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        source = self._source_pixmap
+        area = self.contentsRect()
+        scale = min(area.width() / source.width(), area.height() / source.height())
+        if scale <= 0:
+            return
+        shown_width = source.width() * scale
+        shown_height = source.height() * scale
+        offset_x = area.x() + (area.width() - shown_width) / 2
+        offset_y = area.y() + (area.height() - shown_height) / 2
+        px = event.position().x()
+        py = event.position().y()
+        if not (offset_x <= px < offset_x + shown_width and offset_y <= py < offset_y + shown_height):
+            return
+        x = int((px - offset_x) / scale)
+        y = int((py - offset_y) / scale)
+        self.point_selected.emit(
+            max(0, min(source.width() - 1, x)),
+            max(0, min(source.height() - 1, y)),
+        )
 
 
 class _AttackWorker(QThread):
@@ -33,24 +95,39 @@ class _AttackWorker(QThread):
 
 
 class AttackPage(QWidget):
-    """Reusable attack UI page; instantiate and add to a tab without changing main.py."""
+    """Attack task editor with a clickable, live-refreshable device screenshot."""
     def __init__(self, device_factory, parent=None) -> None:
         super().__init__(parent)
         self.device_factory = device_factory
         self.worker: _AttackWorker | None = None
         self.steps: list[TapStep] = []
+        self._click_counter = 0
 
         layout = QVBoxLayout(self)
         intro = QLabel(
-            "مهمة الهجوم التجريبية: أضف إحداثيات تم التحقق منها على دقة المحاكي الحالية. "
-            "لا توجد إحداثيات افتراضية حتى لا ينقر البرنامج عشوائياً."
+            "حدّث صورة اللعبة ثم انقر على موضع الزر داخل الصورة لإضافة خطوة تلقائياً. "
+            "الإحداثيات المحفوظة تكون بدقة شاشة الجهاز الأصلية."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
+        screenshot_row = QHBoxLayout()
+        screenshot_col = QVBoxLayout()
+        self.screenshot = ClickableScreenshot()
+        self.screenshot.point_selected.connect(self.add_step_from_point)
+        self.refresh_screenshot_button = QPushButton("تحديث صورة اللعبة")
+        self.refresh_screenshot_button.clicked.connect(self.refresh_screenshot)
+        screenshot_col.addWidget(self.refresh_screenshot_button)
+        screenshot_col.addWidget(self.screenshot, 1)
+        self.screen_info = QLabel("لم تُلتقط صورة بعد")
+        self.screen_info.setWordWrap(True)
+        screenshot_col.addWidget(self.screen_info)
+        screenshot_row.addLayout(screenshot_col, 3)
+
+        controls_col = QVBoxLayout()
         form = QFormLayout()
         self.step_name = QLineEdit()
-        self.step_name.setPlaceholderText("مثال: زر البحث عن خصم")
+        self.step_name.setPlaceholderText("اسم الخطوة أو الزر")
         self.x_value = QSpinBox()
         self.x_value.setRange(0, 10000)
         self.y_value = QSpinBox()
@@ -66,19 +143,22 @@ class AttackPage(QWidget):
         form.addRow("الإحداثي Y:", self.y_value)
         form.addRow("انتظار بعد النقر (ثانية):", self.wait_value)
         form.addRow("عدد تكرار التسلسل:", self.repeat_value)
-        layout.addLayout(form)
+        controls_col.addLayout(form)
 
         row = QHBoxLayout()
-        add_button = QPushButton("إضافة خطوة")
+        add_button = QPushButton("إضافة بالإحداثيات")
         remove_button = QPushButton("حذف الخطوة المحددة")
         add_button.clicked.connect(self.add_step)
         remove_button.clicked.connect(self.remove_step)
         row.addWidget(add_button)
         row.addWidget(remove_button)
-        layout.addLayout(row)
+        controls_col.addLayout(row)
 
         self.steps_list = QListWidget()
-        layout.addWidget(self.steps_list, 1)
+        controls_col.addWidget(QLabel("خطوات التسلسل:"))
+        controls_col.addWidget(self.steps_list, 1)
+        screenshot_row.addLayout(controls_col, 2)
+        layout.addLayout(screenshot_row, 3)
 
         controls = QHBoxLayout()
         self.start_button = QPushButton("بدء الهجوم")
@@ -93,22 +173,52 @@ class AttackPage(QWidget):
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setPlaceholderText("سجل تنفيذ مهمة الهجوم")
-        layout.addWidget(self.log_view, 1)
+        self.log_view.setMaximumHeight(120)
+        layout.addWidget(self.log_view)
+
+    def refresh_screenshot(self) -> None:
+        try:
+            device = self.device_factory()
+            png = device.screenshot()
+            self.screenshot.set_screenshot(png)
+            image = self.screenshot._source_pixmap
+            self.screen_info.setText(
+                f"دقة الجهاز: {image.width()} × {image.height()} — انقر على الصورة لإضافة خطوة."
+            )
+            self.append_log("INFO", f"تم تحديث صورة اللعبة بدقة {image.width()}×{image.height()}.")
+        except Exception as exc:
+            self.append_log("ERROR", f"تعذر تحديث صورة اللعبة: {exc}")
+            QMessageBox.warning(self, "تعذر التقاط الشاشة", str(exc))
+
+    def add_step_from_point(self, x: int, y: int) -> None:
+        self._click_counter += 1
+        name = self.step_name.text().strip() or f"نقرة {self._click_counter}"
+        self.x_value.setValue(x)
+        self.y_value.setValue(y)
+        self.step_name.setText(name)
+        self._append_step(name, x, y)
+        self.step_name.clear()
+        self.append_log("INFO", f"أُضيفت نقطة من الصورة: X={x}, Y={y}.")
 
     def add_step(self) -> None:
         name = self.step_name.text().strip()
         if not name:
-            QMessageBox.warning(self, "اسم الخطوة", "اكتب اسماً واضحاً للخطوة.")
+            QMessageBox.warning(self, "اسم الخطوة", "اكتب اسماً للخطوة أو انقر على صورة اللعبة.")
             return
-        step = TapStep(name, self.x_value.value(), self.y_value.value(), float(self.wait_value.value()))
+        self._append_step(name, self.x_value.value(), self.y_value.value())
+        self.step_name.clear()
+
+    def _append_step(self, name: str, x: int, y: int) -> None:
+        step = TapStep(name, x, y, float(self.wait_value.value()))
         try:
             step.validate()
         except ValueError as exc:
             QMessageBox.warning(self, "خطوة غير صالحة", str(exc))
             return
         self.steps.append(step)
-        self.steps_list.addItem(f"{name} — X:{step.x}, Y:{step.y}, انتظار {step.wait_after:g} ث")
-        self.step_name.clear()
+        self.steps_list.addItem(
+            f"{name} — X:{step.x}, Y:{step.y}, انتظار {step.wait_after:g} ث"
+        )
 
     def remove_step(self) -> None:
         index = self.steps_list.currentRow()
