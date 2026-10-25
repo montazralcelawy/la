@@ -39,7 +39,12 @@ class Card(QFrame):
   super().__init__(); self.setObjectName('panel'); l=QVBoxLayout(self); self.value=QLabel(value); self.value.setObjectName('metric'); self.value.setStyleSheet(f'color:{color}'); l.addWidget(self.value); l.addWidget(QLabel(title)); n=QLabel(note); n.setObjectName('muted'); l.addWidget(n); l.setContentsMargins(14,12,14,12)
 class Window(QMainWindow):
  def __init__(self):
-  super().__init__(); self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
+  super().__init__()
+  # Initialize/migrate the shared SQLite schema before any page queries profiles.
+  # This also repairs older profiles.db files missing the profiles table.
+  con = db()
+  con.close()
+  self.setWindowTitle('Clash Automation Lab'); self.resize(1360,820); self.selected=None; self.running=False; self.pages=QStackedWidget(); self.navs=[]; self.setCentralWidget(QWidget()); root=QHBoxLayout(self.centralWidget()); root.setContentsMargins(8,8,8,8); root.addWidget(self.pages,1)
   self.make_dashboard(); self.make_profiles(); self.make_emulator(); self.task_page = TasksPage(self); self.pages.addWidget(self.task_page); self.make_settings(); self.make_logs()
   self.make_scripts_page()
   self.make_text_page('حول البرنامج',['Clash Automation Lab','واجهة تجريبية لإدارة ملفات التعريف ومراقبة اتصال ADB.','الإصدار 1.0.0']); self.pages.addWidget(BotConfigPage(self))
