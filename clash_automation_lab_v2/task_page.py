@@ -402,6 +402,7 @@ class TasksPage(QWidget):
         buttons = QHBoxLayout()
         for label, fn, obj in [('＋ إنشاء مهمة', self.create_task, 'primary'),
                                ('▣ عرض آخر لقطة', self.show_latest_screenshot, ''),
+                               ('✂ إنشاء قالب من اللقطة', self.create_template_from_screenshot, ''),
                                ('⟳ تحديث الأجهزة', self.refresh_devices, ''),
                                ('▶ تشغيل المحددة', self.run_task, 'green'),
                                ('▶ تشغيل كل الجاهزة', self.run_queue, 'green'),
@@ -670,6 +671,63 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'اكتملت المهمة', result)
         elif status == 'فشلت':
             QMessageBox.warning(self, 'تعذر إكمال المهمة', result or 'لم تنجح المهمة.')
+
+    def create_template_from_screenshot(self):
+        source = latest_screenshot_path()
+        if source is None:
+            QMessageBox.information(self, 'لا توجد لقطة شاشة',
+                                    'التقط لقطة شاشة من المحاكي أولاً، ثم أنشئ القالب منها.')
+            return
+        pixmap = QPixmap(str(source))
+        if pixmap.isNull():
+            QMessageBox.warning(self, 'تعذر فتح اللقطة', 'تعذر قراءة الصورة: ' + str(source))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('قص قالب بصري من لقطة الشاشة')
+        dialog.setMinimumWidth(440)
+        form = QFormLayout(dialog)
+        form.addRow(QLabel(f'الصورة: {source.name} — {pixmap.width()} × {pixmap.height()} بكسل'))
+        x = QSpinBox(); x.setRange(0, max(0, pixmap.width() - 1)); x.setValue(0)
+        y = QSpinBox(); y.setRange(0, max(0, pixmap.height() - 1)); y.setValue(0)
+        width = QSpinBox(); width.setRange(1, pixmap.width()); width.setValue(min(120, pixmap.width()))
+        height = QSpinBox(); height.setRange(1, pixmap.height()); height.setValue(min(80, pixmap.height()))
+        form.addRow('X — بداية القص:', x)
+        form.addRow('Y — بداية القص:', y)
+        form.addRow('العرض:', width)
+        form.addRow('الارتفاع:', height)
+        hint = QLabel('حدد مستطيلاً صغيراً حول زر أو عنصر ثابت. يجب أن يبقى المستطيل داخل حدود الصورة.')
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        buttons = QHBoxLayout()
+        save = QPushButton('حفظ القالب…')
+        cancel = QPushButton('إلغاء')
+        buttons.addWidget(save)
+        buttons.addWidget(cancel)
+        form.addRow(buttons)
+        cancel.clicked.connect(dialog.reject)
+
+        def save_crop():
+            left, top, w, h = x.value(), y.value(), width.value(), height.value()
+            if left + w > pixmap.width() or top + h > pixmap.height():
+                QMessageBox.warning(dialog, 'حدود القص', 'مستطيل القص يتجاوز حدود الصورة.')
+                return
+            output, _ = QFileDialog.getSaveFileName(
+                dialog, 'حفظ صورة القالب', str(Path.home() / 'clash_template.png'),
+                'PNG (*.png);;JPEG (*.jpg *.jpeg)')
+            if not output:
+                return
+            if not Path(output).suffix:
+                output += '.png'
+            crop = pixmap.copy(left, top, w, h)
+            if crop.isNull() or not crop.save(output):
+                QMessageBox.warning(dialog, 'تعذر الحفظ', 'لم أتمكن من حفظ القالب في المسار المحدد.')
+                return
+            self.template_path.setText(output)
+            self.window.log(f'تم حفظ القالب البصري: {output} ({w}×{h}).')
+            dialog.accept()
+
+        save.clicked.connect(save_crop)
+        dialog.exec()
 
     def show_latest_screenshot(self):
         path = latest_screenshot_path()
