@@ -158,6 +158,20 @@ class TaskWorkerTests(unittest.TestCase):
         self.assertEqual((match["x"], match["y"]), (29, 24))
         self.assertGreater(match["confidence"], 0.99)
 
+    def test_wait_for_template_succeeds_when_template_appears(self):
+        from unittest.mock import Mock
+        result = []
+        worker = task_page.TaskWorker(15, "انتظار قالب", "emulator-5554", "wait_for_template", "adb",
+                                     {"template_path": "button.png", "confidence": 0.85, "duration_ms": 1000})
+        worker.completed.connect(lambda *args: result.append(args))
+        probe = Mock(returncode=0, stdout=b"png", stderr=b"")
+        match = {"found": True, "confidence": 0.91, "x": 123, "y": 234, "width": 800, "height": 600}
+        with patch.object(task_page.subprocess, "run", return_value=probe), patch.object(task_page, "match_template_in_screenshot", return_value=match) as matcher:
+            worker.run()
+        self.assertEqual(result[0][1], "نجحت")
+        self.assertIn("(123, 234)", result[0][2])
+        matcher.assert_called_once()
+
     def test_template_search_reports_match_confidence(self):
         from unittest.mock import Mock
         result = []
