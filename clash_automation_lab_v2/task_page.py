@@ -194,6 +194,8 @@ class TasksPage(QWidget):
                                ('▶ تشغيل المحددة', self.run_task, 'green'),
                                ('▶ تشغيل كل الجاهزة', self.run_queue, 'green'),
                                ('■ إيقاف المهمة', self.stop_task, 'red'),
+                               ('↻ إعادة المحددة', self.reset_selected_task, ''),
+                               ('↻ إعادة الكل', self.reset_all_tasks, ''),
                                ('حذف المهمة', self.delete_task, 'red')]:
             b = QPushButton(label)
             if obj:
@@ -428,6 +430,41 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'اكتملت المهمة', result)
         elif status == 'فشلت':
             QMessageBox.warning(self, 'تعذر إكمال المهمة', result or 'لم تنجح المهمة.')
+
+    def reset_selected_task(self):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'أوقف المهمة الحالية قبل إعادة تعيين الحالات.')
+            return
+        row = self.table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, 'اختر مهمة', 'حدد مهمة من القائمة أولاً.')
+            return
+        task_id = int(self.table.item(row, 0).text())
+        con = db()
+        cur = con.execute("UPDATE tasks SET status='جاهزة',result='' WHERE id=? AND status!='قيد التشغيل'", (task_id,))
+        con.commit()
+        con.close()
+        if cur.rowcount:
+            self.window.log('أُعيدت المهمة ' + str(task_id) + ' إلى حالة جاهزة.')
+        self.reload_tasks()
+
+    def reset_all_tasks(self):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, 'المهمة قيد التنفيذ', 'أوقف المهمة الحالية قبل إعادة تعيين الحالات.')
+            return
+        answer = QMessageBox.question(
+            self, 'إعادة تعيين المهام',
+            'إعادة جميع المهام غير النشطة إلى حالة جاهزة؟ ستُمسح نتائجها السابقة من الجدول.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        con = db()
+        cur = con.execute("UPDATE tasks SET status='جاهزة',result='' WHERE status!='قيد التشغيل'")
+        count = cur.rowcount
+        con.commit()
+        con.close()
+        self.window.log('أُعيدت ' + str(count) + ' مهمة إلى حالة جاهزة.')
+        self.reload_tasks()
 
     def delete_task(self):
         if self.worker is not None and self.worker.isRunning():
