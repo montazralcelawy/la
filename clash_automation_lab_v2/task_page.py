@@ -85,6 +85,13 @@ class TaskWorker(QThread):
                 elif self.action == 'launch_game':
                     args += ['shell', 'monkey', '-p', self.params.get('package', 'com.supercell.clashofclans'),
                              '-c', 'android.intent.category.LAUNCHER', '1']
+                elif self.action == 'check_game_installed':
+                    package = str(self.params.get('package', 'com.supercell.clashofclans')).strip()
+                    if not package or any(ch.isspace() for ch in package):
+                        raise RuntimeError('اسم حزمة التطبيق غير صالح.')
+                    args += ['shell', 'pm', 'path', package]
+                elif self.action == 'current_app':
+                    args += ['shell', 'dumpsys', 'window', 'windows']
                 elif self.action == 'tap':
                     args += ['shell', 'input', 'tap', str(int(self.params.get('x', 0))),
                              str(int(self.params.get('y', 0)))]
@@ -135,6 +142,20 @@ class TaskWorker(QThread):
                         status, result = 'نجحت', 'الجهاز متصل وجاهز.'
                     else:
                         result = 'حالة الجهاز غير متوقعة: ' + (state or 'لا توجد استجابة')
+                elif self.action == 'check_game_installed':
+                    package_path = stdout.decode(errors='replace').strip()
+                    if package_path.startswith('package:'):
+                        status, result = 'نجحت', 'التطبيق مثبت على الجهاز: ' + package_path.splitlines()[0]
+                    else:
+                        result = 'لم يتم العثور على التطبيق. تحقق من اسم الحزمة أو ثبّت اللعبة أولاً.'
+                elif self.action == 'current_app':
+                    window_info = stdout.decode(errors='replace')
+                    focus_lines = [line.strip() for line in window_info.splitlines()
+                                   if 'mCurrentFocus' in line or 'mFocusedApp' in line]
+                    if focus_lines:
+                        status, result = 'نجحت', 'معلومات النافذة الأمامية: ' + ' | '.join(focus_lines[:2])
+                    else:
+                        result = 'لم يتمكن ADB من تحديد النافذة الأمامية؛ قد تختلف صيغة Android على هذا المحاكي.'
                 elif self.action == 'screenshot':
                     if stdout[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]):
                         folder = ROOT / 'screenshots'
@@ -181,6 +202,8 @@ class TasksPage(QWidget):
         self.device = QComboBox()
         self.action = QComboBox()
         self.action.addItem('اختبار اتصال ADB', 'check')
+        self.action.addItem('التحقق من تثبيت اللعبة', 'check_game_installed')
+        self.action.addItem('معرفة التطبيق الظاهر حالياً', 'current_app')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
@@ -236,7 +259,11 @@ class TasksPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         tl.addWidget(self.table)
         layout.addWidget(table_panel, 1)
-        note = QLabel('المهام المدعومة: فحص ADB، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر وتأكد من دقة شاشة المحاكي.')
+        self.stop_queue_on_failure = QCheckBox('إيقاف قائمة المهام عند فشل أي مهمة')
+        self.stop_queue_on_failure.setChecked(True)
+        self.stop_queue_on_failure.setToolTip('عند فشل خطوة، لن تُنفذ الخطوات التالية تلقائياً ما لم تُلغِ هذا الخيار.')
+        layout.addWidget(self.stop_queue_on_failure)
+        note = QLabel('المهام المدعومة: فحص ADB، التحقق من تثبيت التطبيق، معرفة النافذة الأمامية، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر.')
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
@@ -335,7 +362,8 @@ class TasksPage(QWidget):
         con.close()
         self.table.setRowCount(len(rows))
         names = {
-            'check': 'اختبار اتصال', 'screenshot': 'لقطة شاشة',
+            'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
+            'current_app': 'التطبيق الظاهر حالياً', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
@@ -444,6 +472,15 @@ class TasksPage(QWidget):
         self.reload_tasks()
         self.worker = None
         if self.queue_running:
+            if status != 'نجحت' and self.stop_queue_on_failure.isChecked():
+                skipped = len(self.queue_ids)
+                self.queue_ids = []
+                self.queue_running = False
+                if hasattr(self.window, 'queue_state_changed'):
+                    self.window.queue_state_changed(False)
+                self.window.log(f'أُوقفت القائمة بعد فشل مهمة؛ المهام التي لم تبدأ: {skipped}.')
+                QMessageBox.warning(self, 'توقفت قائمة المهام', 'فشلت إحدى المهام، لذلك أُوقفت القائمة لتجنب تنفيذ خطوات غير مناسبة. راجع نتيجة المهمة ثم أعد تشغيل القائمة عند الحاجة.')
+                return
             self.run_next_queued_task()
             return
         if status == 'نجحت':
