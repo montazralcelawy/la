@@ -19,7 +19,7 @@ def test_tap_step_rejects_negative_coordinates():
         raise AssertionError("negative coordinates should be rejected")
 
 
-def test_runner_stops_before_first_tap(monkeypatch):
+def test_runner_executes_configured_steps(monkeypatch):
     from clash_lab import attack
 
     class FakeDevice:
@@ -38,8 +38,6 @@ def test_runner_stops_before_first_tap(monkeypatch):
     device = FakeDevice()
     logs = []
     runner = AttackRunner(device, AttackConfig((TapStep("first", 10, 20, 0),)), lambda level, msg: logs.append((level, msg)))
-    runner.stop()
-    # run clears the stop request at startup, so a tap is expected; test safe basic run instead.
     assert runner.run() is True
     assert device.taps == [(10, 20)]
     assert any(level == "SUCCESS" for level, _ in logs)
