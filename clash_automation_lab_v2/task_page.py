@@ -14,6 +14,34 @@ ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) el
 DB = ROOT / 'profiles.db'
 
 
+def match_template_in_screenshot(screenshot_bytes, template_path, threshold=0.85):
+    """Find a user-supplied reference image in an ADB screenshot using OpenCV."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError('ميزة التعرف على الصور تحتاج opencv-python-headless؛ أعد تثبيت requirements.txt.') from exc
+    template_file = Path(template_path).expanduser()
+    if not template_file.is_file():
+        raise RuntimeError('ملف القالب غير موجود: ' + str(template_file))
+    screenshot = cv2.imdecode(np.frombuffer(screenshot_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    template = cv2.imread(str(template_file), cv2.IMREAD_COLOR)
+    if screenshot is None:
+        raise RuntimeError('تعذر فك لقطة الشاشة المأخوذة من ADB.')
+    if template is None:
+        raise RuntimeError('تعذر قراءة صورة القالب؛ استخدم PNG أو JPG صالحاً.')
+    sh, sw = screenshot.shape[:2]
+    th, tw = template.shape[:2]
+    if th > sh or tw > sw:
+        raise RuntimeError(f'القالب أكبر من لقطة الشاشة ({tw}×{th} مقابل {sw}×{sh}).')
+    scores = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+    _, confidence, _, location = cv2.minMaxLoc(scores)
+    threshold = max(0.1, min(float(threshold), 0.999))
+    return {'found': float(confidence) >= threshold, 'confidence': float(confidence),
+            'x': int(location[0] + tw // 2), 'y': int(location[1] + th // 2),
+            'width': int(sw), 'height': int(sh)}
+
+
 def latest_screenshot_path(root=None):
     """Return the newest valid screenshot path, or None when none exist."""
     folder = Path(root) / 'screenshots' if root is not None else ROOT / 'screenshots'
@@ -68,7 +96,41 @@ class TaskWorker(QThread):
     def run(self):
         status, result = 'فشلت', ''
         try:
-            if self.action == 'wait':
+            if self.action in ('find_template', 'tap_if_template'):
+                if not self.adb_path or not self.serial:
+                    raise RuntimeError('يلزم تحديد ADB والجهاز لاستخدام التعرف على الصور.')
+                template_path = str(self.params.get('template_path', '')).strip()
+                if not template_path:
+                    raise RuntimeError('حدد مسار صورة القالب المرجعية أولاً.')
+                threshold = max(0.1, min(float(self.params.get('confidence', 0.85)), 0.999))
+                capture = subprocess.run(
+                    [self.adb_path, '-s', self.serial, 'exec-out', 'screencap', '-p'],
+                    capture_output=True, timeout=20,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                if capture.returncode != 0:
+                    raise RuntimeError(capture.stderr.decode(errors='replace').strip() or 'فشل التقاط الشاشة عبر ADB.')
+                match = match_template_in_screenshot(capture.stdout, template_path, threshold)
+                percent = f"{match['confidence'] * 100:.1f}%"
+                if not match['found']:
+                    result = f"لم يظهر القالب بدرجة الثقة المطلوبة. أفضل تطابق: {percent}؛ المطلوب: {threshold * 100:.1f}%."
+                elif self.action == 'find_template':
+                    status = 'نجحت'
+                    result = f"تم العثور على القالب عند ({match['x']}, {match['y']}) بثقة {percent}."
+                else:
+                    self.process = subprocess.Popen(
+                        [self.adb_path, '-s', self.serial, 'shell', 'input', 'tap',
+                         str(match['x']), str(match['y'])],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    stdout, stderr = self.process.communicate(timeout=15)
+                    if self.cancel_requested.is_set():
+                        status, result = 'أُلغيت', 'أُلغي اللمس بعد مطابقة القالب.'
+                    elif self.process.returncode != 0:
+                        result = stderr.decode(errors='replace').strip() or 'فشل إرسال اللمس إلى مركز القالب.'
+                    else:
+                        status = 'نجحت'
+                        result = f"عُثر على القالب بثقة {percent} ونُفذ اللمس عند ({match['x']}, {match['y']})."
+            elif self.action == 'wait':
                 duration = max(0, min(int(self.params.get('duration_ms', 1000)), 3600000))
                 if self.cancel_requested.wait(duration / 1000):
                     status, result = 'أُلغيت', 'أُوقف الانتظار بطلب المستخدم.'
@@ -259,6 +321,8 @@ class TasksPage(QWidget):
         self.action.addItem('التحقق من أن اللعبة ظاهرة قبل المتابعة', 'assert_foreground_app')
         self.action.addItem('انتظار ظهور اللعبة حتى انتهاء المهلة', 'wait_for_foreground_app')
         self.action.addItem('لمس وقائي (فقط إذا كانت اللعبة ظاهرة)', 'guarded_tap')
+        self.action.addItem('البحث عن صورة قالب في الشاشة', 'find_template')
+        self.action.addItem('اللمس عند العثور على صورة قالب', 'tap_if_template')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
@@ -272,12 +336,28 @@ class TasksPage(QWidget):
         self.y2 = QSpinBox(); self.y2.setRange(0, 10000)
         self.duration = QSpinBox(); self.duration.setRange(0, 3600000); self.duration.setValue(500)
         self.package = QLineEdit('com.supercell.clashofclans')
+        self.template_path = QLineEdit()
+        self.template_path.setPlaceholderText('مسار PNG/JPG لعنصر واجهة تريد البحث عنه')
+        self.template_browse = QPushButton('اختيار صورة…')
+        self.template_browse.clicked.connect(self.browse_template)
+        template_row = QWidget()
+        template_layout = QHBoxLayout(template_row)
+        template_layout.setContentsMargins(0, 0, 0, 0)
+        template_layout.addWidget(self.template_path, 1)
+        template_layout.addWidget(self.template_browse)
+        self.confidence = QDoubleSpinBox()
+        self.confidence.setRange(0.10, 0.999)
+        self.confidence.setSingleStep(0.05)
+        self.confidence.setDecimals(3)
+        self.confidence.setValue(0.85)
         form.addRow('X / بداية السحب:', self.x)
         form.addRow('Y / بداية السحب:', self.y)
         form.addRow('X2 / نهاية السحب:', self.x2)
         form.addRow('Y2 / نهاية السحب:', self.y2)
         form.addRow('المدة (مللي ثانية):', self.duration)
         form.addRow('حزمة التطبيق:', self.package)
+        form.addRow('صورة القالب:', template_row)
+        form.addRow('حد الثقة (0.1–0.999):', self.confidence)
         self.action.currentIndexChanged.connect(self.action_changed)
         self.action_changed()
         form.addRow('اسم المهمة:', self.name)
@@ -390,7 +470,9 @@ class TasksPage(QWidget):
             return
         params = {'x': self.x.value(), 'y': self.y.value(), 'x2': self.x2.value(),
                   'y2': self.y2.value(), 'duration_ms': self.duration.value(),
-                  'package': self.package.text().strip() or 'com.supercell.clashofclans'}
+                  'package': self.package.text().strip() or 'com.supercell.clashofclans',
+                  'template_path': self.template_path.text().strip(),
+                  'confidence': self.confidence.value()}
         con = db()
         con.execute('INSERT INTO tasks(name,profile_id,serial,action,status,result,params) VALUES(?,?,?,?,?,?,?)',
                     (name, profile[0] if profile else None, serial, self.action.currentData(), 'جاهزة', '',
@@ -403,12 +485,23 @@ class TasksPage(QWidget):
 
     def action_changed(self, *_):
         action = self.action.currentData()
+        vision = action in ('find_template', 'tap_if_template')
+        self.template_path.setEnabled(vision)
+        self.template_browse.setEnabled(vision)
+        self.confidence.setEnabled(vision)
         self.x.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.y.setEnabled(action in ('tap', 'swipe', 'guarded_tap'))
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
         self.duration.setEnabled(action in ('swipe', 'wait', 'wait_for_foreground_app'))
         self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app', 'wait_for_foreground_app', 'guarded_tap'))
+
+    def browse_template(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'اختر صورة القالب المرجعية', str(Path.home()),
+            'صور PNG/JPEG (*.png *.jpg *.jpeg *.bmp);;كل الملفات (*.*)')
+        if path:
+            self.template_path.setText(path)
 
     def reload_tasks(self):
         con = db()
@@ -419,7 +512,7 @@ class TasksPage(QWidget):
         names = {
             'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
             'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر',
-            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'screenshot': 'لقطة شاشة',
+            'wait_for_foreground_app': 'انتظار التطبيق الظاهر', 'guarded_tap': 'لمس وقائي', 'find_template': 'البحث عن قالب بصري', 'tap_if_template': 'لمس قالب بصري', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
