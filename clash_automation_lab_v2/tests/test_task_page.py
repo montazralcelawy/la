@@ -96,8 +96,8 @@ class TaskWorkerTests(unittest.TestCase):
         home_result, home_popen = self.run_worker("press_home")
         self.assertEqual(back_result[1], "نجحت")
         self.assertEqual(home_result[1], "نجحت")
-        self.assertEqual(back_popen.call_args.args[0][-3:], ["keyevent", "4"][-3:])
-        self.assertEqual(home_popen.call_args.args[0][-3:], ["keyevent", "3"][-3:])
+        self.assertEqual(back_popen.call_args.args[0][-3:], ["input", "keyevent", "4"])
+        self.assertEqual(home_popen.call_args.args[0][-3:], ["input", "keyevent", "3"])
 
     def test_wait_does_not_require_adb(self):
         result, popen = self.run_worker("wait", {"duration_ms": 0}, serial="", adb_path=None)
