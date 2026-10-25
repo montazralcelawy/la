@@ -7,10 +7,20 @@ import subprocess
 import threading
 import time
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 DB = ROOT / 'profiles.db'
+
+
+def latest_screenshot_path(root=None):
+    """Return the newest valid screenshot path, or None when none exist."""
+    folder = Path(root) / 'screenshots' if root is not None else ROOT / 'screenshots'
+    if not folder.is_dir():
+        return None
+    candidates = [p for p in folder.glob('*.png') if p.is_file()]
+    return max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
 
 
 def db():
@@ -199,6 +209,7 @@ class TasksPage(QWidget):
         pl.addLayout(form)
         buttons = QHBoxLayout()
         for label, fn, obj in [('＋ إنشاء مهمة', self.create_task, 'primary'),
+                               ('▣ عرض آخر لقطة', self.show_latest_screenshot, ''),
                                ('⟳ تحديث الأجهزة', self.refresh_devices, ''),
                                ('▶ تشغيل المحددة', self.run_task, 'green'),
                                ('▶ تشغيل كل الجاهزة', self.run_queue, 'green'),
@@ -439,6 +450,48 @@ class TasksPage(QWidget):
             QMessageBox.information(self, 'اكتملت المهمة', result)
         elif status == 'فشلت':
             QMessageBox.warning(self, 'تعذر إكمال المهمة', result or 'لم تنجح المهمة.')
+
+    def show_latest_screenshot(self):
+        path = latest_screenshot_path()
+        if path is None:
+            QMessageBox.information(
+                self, 'لا توجد لقطة شاشة',
+                'التقط لقطة شاشة أولاً من صفحة المهام أو صفحة المحاكي وADB.'
+            )
+            return
+
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            QMessageBox.warning(self, 'تعذر عرض الصورة', 'تعذر فتح ملف الصورة: ' + str(path))
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle('معاينة آخر لقطة شاشة')
+        dialog.resize(1100, 800)
+        layout = QVBoxLayout(dialog)
+        info = QLabel(
+            f'{path.name} — الأبعاد: {pixmap.width()} × {pixmap.height()} بكسل'
+        )
+        info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(info)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False)
+        scroll.setAlignment(Qt.AlignCenter)
+        image_label = QLabel()
+        image_label.setPixmap(pixmap)
+        image_label.setFixedSize(pixmap.size())
+        scroll.setWidget(image_label)
+        layout.addWidget(scroll, 1)
+
+        location = QLabel(str(path))
+        location.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        location.setWordWrap(True)
+        layout.addWidget(location)
+        close_button = QPushButton('إغلاق')
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
 
     def reset_selected_task(self):
         if self.worker is not None and self.worker.isRunning():
