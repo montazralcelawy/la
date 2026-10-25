@@ -90,7 +90,7 @@ class TaskWorker(QThread):
                     if not package or any(ch.isspace() for ch in package):
                         raise RuntimeError('اسم حزمة التطبيق غير صالح.')
                     args += ['shell', 'pm', 'path', package]
-                elif self.action == 'current_app':
+                elif self.action in ('current_app', 'assert_foreground_app'):
                     args += ['shell', 'dumpsys', 'window', 'windows']
                 elif self.action == 'tap':
                     args += ['shell', 'input', 'tap', str(int(self.params.get('x', 0))),
@@ -148,11 +148,21 @@ class TaskWorker(QThread):
                         status, result = 'نجحت', 'التطبيق مثبت على الجهاز: ' + package_path.splitlines()[0]
                     else:
                         result = 'لم يتم العثور على التطبيق. تحقق من اسم الحزمة أو ثبّت اللعبة أولاً.'
-                elif self.action == 'current_app':
+                elif self.action in ('current_app', 'assert_foreground_app'):
                     window_info = stdout.decode(errors='replace')
                     focus_lines = [line.strip() for line in window_info.splitlines()
                                    if 'mCurrentFocus' in line or 'mFocusedApp' in line]
-                    if focus_lines:
+                    if self.action == 'assert_foreground_app':
+                        package = str(self.params.get('package', 'com.supercell.clashofclans')).strip()
+                        if not package or any(ch.isspace() for ch in package):
+                            result = 'اسم حزمة التطبيق غير صالح.'
+                        elif not focus_lines:
+                            result = 'تعذر تحديد النافذة الأمامية؛ لم يتم اجتياز شرط التطبيق المتوقع.'
+                        elif package in '\\n'.join(focus_lines):
+                            status, result = 'نجحت', 'تم التحقق: التطبيق المتوقع ظاهر في المقدمة (' + package + ').'
+                        else:
+                            result = 'فشل شرط التطبيق الظاهر. المتوقع: ' + package + '؛ النافذة الحالية: ' + ' | '.join(focus_lines[:2])
+                    elif focus_lines:
                         status, result = 'نجحت', 'معلومات النافذة الأمامية: ' + ' | '.join(focus_lines[:2])
                     else:
                         result = 'لم يتمكن ADB من تحديد النافذة الأمامية؛ قد تختلف صيغة Android على هذا المحاكي.'
@@ -204,6 +214,7 @@ class TasksPage(QWidget):
         self.action.addItem('اختبار اتصال ADB', 'check')
         self.action.addItem('التحقق من تثبيت اللعبة', 'check_game_installed')
         self.action.addItem('معرفة التطبيق الظاهر حالياً', 'current_app')
+        self.action.addItem('التحقق من أن اللعبة ظاهرة قبل المتابعة', 'assert_foreground_app')
         self.action.addItem('التقاط لقطة شاشة', 'screenshot')
         self.action.addItem('فتح لعبة Clash of Clans', 'launch_game')
         self.action.addItem('لمس الشاشة عند إحداثيات', 'tap')
@@ -263,7 +274,7 @@ class TasksPage(QWidget):
         self.stop_queue_on_failure.setChecked(True)
         self.stop_queue_on_failure.setToolTip('عند فشل خطوة، لن تُنفذ الخطوات التالية تلقائياً ما لم تُلغِ هذا الخيار.')
         layout.addWidget(self.stop_queue_on_failure)
-        note = QLabel('المهام المدعومة: فحص ADB، التحقق من تثبيت التطبيق، معرفة النافذة الأمامية، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر.')
+        note = QLabel('المهام المدعومة: فحص ADB، التحقق من تثبيت التطبيق، فحص التطبيق الظاهر أو اشتراط ظهوره، فتح التطبيق، لقطة شاشة، لمس/سحب بإحداثيات، انتظار، رجوع، والشاشة الرئيسية. نفّذ الإحداثيات بحذر.')
         note.setObjectName('muted')
         layout.addWidget(note)
         self.worker = None
@@ -353,7 +364,7 @@ class TasksPage(QWidget):
         self.x2.setEnabled(action == 'swipe')
         self.y2.setEnabled(action == 'swipe')
         self.duration.setEnabled(action in ('swipe', 'wait'))
-        self.package.setEnabled(action in ('launch_game', 'check_game_installed'))
+        self.package.setEnabled(action in ('launch_game', 'check_game_installed', 'assert_foreground_app'))
 
     def reload_tasks(self):
         con = db()
@@ -363,7 +374,7 @@ class TasksPage(QWidget):
         self.table.setRowCount(len(rows))
         names = {
             'check': 'اختبار اتصال', 'check_game_installed': 'التحقق من تثبيت اللعبة',
-            'current_app': 'التطبيق الظاهر حالياً', 'screenshot': 'لقطة شاشة',
+            'current_app': 'التطبيق الظاهر حالياً', 'assert_foreground_app': 'شرط التطبيق الظاهر', 'screenshot': 'لقطة شاشة',
             'launch_game': 'فتح التطبيق', 'tap': 'لمس الشاشة',
             'swipe': 'سحب الشاشة', 'wait': 'انتظار',
             'press_back': 'زر الرجوع', 'press_home': 'الشاشة الرئيسية'
